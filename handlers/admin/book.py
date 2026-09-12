@@ -1,29 +1,52 @@
 # -*- coding: utf-8 -*-
 """
-مراحل ادمین برای:
-  1) ساخت کتاب جدید (عنوان، نویسنده، توضیحات)
-  2) اتصال تاپیک‌ها: ادمین باید داخل گروه، در هر کدوم از سه تاپیک
-     دستور /settopic <book_id> <pigiri|boride|gap> را بفرستد.
-  3) فعال‌سازی کتاب (بعد از تعیین برنامه): اعلان رسمی در تاپیک «گپ» پست می‌شود.
+مسیرهای ادمین برای کتاب:
+  1) ساخت کتاب جدید (عنوان، نویسنده، توضیحات، تعداد صفحات کتاب، تعداد صفحات پی‌دی‌اف)
+  2) اتصال تاپیک «پیگیری»: ادمین داخل همان تاپیک دستور /settopic <book_id> را می‌فرستد.
+  3) ویرایش کتاب
+  4) حذف کتاب
+  5) فعال‌سازی کتاب: اعلان رسمی در تاپیک «پیگیری» پست می‌شود.
 """
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
-    CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
-    filters,
 )
 
 import database as db
-from utils.keyboards import ADMIN_MENU, CANCEL_KB, books_kb
-from utils.formatting import format_schedule_announcement
-from utils.jalali import parse_jalali, format_jalali_human
-from handlers.common import is_admin
+from utils.keyboards import (
+    ADMIN_MENU,
+    CANCEL_KB,
+    books_kb,
+    fields_kb,
+    BTN_NEW_BOOK,
+    BTN_EDIT_BOOK,
+    BTN_DELETE_BOOK,
+    BTN_ACTIVATE_BOOK,
+)
+from utils.formatting import format_schedule_announcement, format_book_info
+from utils.jalali import days_with_human
+from handlers.common import is_admin, TEXT_INPUT, end_and_show_menu, button_filter
+from handlers.states import S
 
-TITLE, AUTHOR, DESCRIPTION = range(3)
-CHOOSE_BOOK_TO_ACTIVATE = 100
+EDITABLE_FIELDS = [
+    ("title", "📖 عنوان"),
+    ("author", "✍️ نویسنده"),
+    ("description", "📝 توضیحات"),
+    ("book_pages", "📄 تعداد صفحات کتاب"),
+    ("pdf_pages", "💻 تعداد صفحات پی‌دی‌اف"),
+]
+FIELD_LABELS = dict(EDITABLE_FIELDS)
+NUMERIC_FIELDS = {"book_pages", "pdf_pages"}
+
+
+def _parse_pages(text: str) -> int:
+    value = int(text.strip())
+    if value < 1:
+        raise ValueError
+    return value
 
 
 # ------------------------------------------------------------- ساخت کتاب --
@@ -31,41 +54,62 @@ CHOOSE_BOOK_TO_ACTIVATE = 100
 async def new_book_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return ConversationHandler.END
+    context.user_data.clear()
     await update.message.reply_text(
         "عنوان کتاب رو بفرست (مثال: آدمخواران):", reply_markup=CANCEL_KB
     )
-    return TITLE
+    return S.BOOK_TITLE
 
 
 async def new_book_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["new_book_title"] = update.message.text.strip()
     await update.message.reply_text("اسم نویسنده رو بفرست:")
-    return AUTHOR
+    return S.BOOK_AUTHOR
 
 
 async def new_book_author(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["new_book_author"] = update.message.text.strip()
     await update.message.reply_text("یه توضیح کوتاه درباره کتاب بنویس (یا - بفرست اگه نمی‌خوای):")
-    return DESCRIPTION
+    return S.BOOK_DESCRIPTION
 
 
 async def new_book_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     desc = update.message.text.strip()
-    if desc == "-":
-        desc = ""
+    context.user_data["new_book_description"] = "" if desc == "-" else desc
+    await update.message.reply_text("تعداد کل صفحات کتاب چاپی رو بفرست (مثال: 320):")
+    return S.BOOK_PAGES
+
+
+async def new_book_pages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        context.user_data["new_book_pages"] = _parse_pages(update.message.text)
+    except ValueError:
+        await update.message.reply_text("باید یه عدد مثبت بفرستی، مثلا: 320")
+        return S.BOOK_PAGES
+    await update.message.reply_text("تعداد کل صفحات فایل پی‌دی‌اف رو بفرست (مثال: 180):")
+    return S.BOOK_PDF_PAGES
+
+
+async def new_book_pdf_pages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        pdf_pages = _parse_pages(update.message.text)
+    except ValueError:
+        await update.message.reply_text("باید یه عدد مثبت بفرستی، مثلا: 180")
+        return S.BOOK_PDF_PAGES
+
     title = context.user_data.pop("new_book_title")
     author = context.user_data.pop("new_book_author")
+    desc = context.user_data.pop("new_book_description")
+    book_pages = context.user_data.pop("new_book_pages")
 
-    book_id = db.create_book(title, author, desc)
+    book_id = db.create_book(title, author, desc, book_pages, pdf_pages)
 
     await update.message.reply_text(
-        f"✅ کتاب «{title}» با شناسه #{book_id} ساخته شد.\n\n"
-        "حالا برای اتصال تاپیک‌های این کتاب:\n"
-        "۱) وارد گروه شو.\n"
-        "۲) داخل هر کدوم از سه تاپیک (پیگیری، بریده‌ها، گپ)، این دستور رو بفرست:\n\n"
-        f"در تاپیک «پیگیری» بفرست:\n<code>/settopic {book_id} pigiri</code>\n\n"
-        f"در تاپیک «بریده‌ها» بفرست:\n<code>/settopic {book_id} boride</code>\n\n"
-        f"در تاپیک «گپ» بفرست:\n<code>/settopic {book_id} gap</code>\n\n"
+        f"✅ کتاب «{title}» با شناسه #{book_id} ساخته شد.\n"
+        f"📄 صفحات کتاب: {book_pages} | 💻 صفحات پی‌دی‌اف: {pdf_pages}\n\n"
+        "حالا برای اتصال تاپیک «پیگیری» این کتاب:\n"
+        "۱) وارد گروه شو و برو توی تاپیک «پیگیری».\n"
+        f"۲) همونجا این دستور رو بفرست:\n<code>/settopic {book_id}</code>\n\n"
         "بعدش می‌تونی از منو، «📅 تعیین برنامه همخوانی» رو بزنی.",
         parse_mode="HTML",
         reply_markup=ADMIN_MENU,
@@ -73,18 +117,7 @@ async def new_book_description(update: Update, context: ContextTypes.DEFAULT_TYP
     return ConversationHandler.END
 
 
-book_conv_handler = ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^➕ کتاب جدید$"), new_book_start)],
-    states={
-        TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, new_book_title)],
-        AUTHOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, new_book_author)],
-        DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, new_book_description)],
-    },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-)
-
-
-# ---------------------------------------------------------- اتصال تاپیک‌ها --
+# ---------------------------------------------------------- اتصال تاپیک --
 
 async def set_topic_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -92,12 +125,12 @@ async def set_topic_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = update.message
     if msg.chat.type not in ("group", "supergroup"):
-        await msg.reply_text("این دستور فقط باید داخل گروه و در تاپیک موردنظر فرستاده بشه.")
+        await msg.reply_text("این دستور فقط باید داخل گروه و در تاپیک «پیگیری» فرستاده بشه.")
         return
 
     args = context.args
-    if len(args) != 2 or args[1] not in ("pigiri", "boride", "gap"):
-        await msg.reply_text("فرمت درست: /settopic <book_id> <pigiri|boride|gap>")
+    if not args:
+        await msg.reply_text("فرمت درست: /settopic <book_id>")
         return
 
     try:
@@ -111,11 +144,120 @@ async def set_topic_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("کتابی با این شناسه پیدا نشد.")
         return
 
-    thread_id = msg.message_thread_id  # ممکنه None باشه اگه گروه توپیک نداشته باشه
-    db.set_book_topic(book_id, args[1], msg.chat_id, thread_id)
+    db.set_book_topic(book_id, msg.chat_id, msg.message_thread_id)
+    await msg.reply_text(f"✅ تاپیک «پیگیری» برای کتاب «{book['title']}» ثبت شد.")
 
-    labels = {"pigiri": "پیگیری", "boride": "بریده‌ها", "gap": "گپ"}
-    await msg.reply_text(f"✅ تاپیک «{labels[args[1]]}» برای کتاب «{book['title']}» ثبت شد.")
+
+# ----------------------------------------------------------- ویرایش کتاب --
+
+async def edit_book_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        return ConversationHandler.END
+    context.user_data.clear()
+    books = db.list_books()
+    if not books:
+        return await end_and_show_menu(update, context, "هنوز کتابی ثبت نشده.")
+    await update.message.reply_text(
+        "کدوم کتاب رو ویرایش کنم؟", reply_markup=books_kb(books, "edit_book")
+    )
+    return S.EDIT_CHOOSE_BOOK
+
+
+async def edit_book_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    book_id = int(query.data.split(":")[1])
+    context.user_data["edit_book_id"] = book_id
+    book = db.get_book(book_id)
+    await query.edit_message_text(
+        format_book_info(book) + "\n\nکدوم بخش رو عوض کنم؟",
+        reply_markup=fields_kb(EDITABLE_FIELDS, "edit_field"),
+    )
+    return S.EDIT_CHOOSE_FIELD
+
+
+async def edit_book_choose_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    field = query.data.split(":")[1]
+    context.user_data["edit_field"] = field
+    await query.edit_message_text(f"مقدار جدید برای «{FIELD_LABELS[field]}» رو بفرست:")
+    return S.EDIT_VALUE
+
+
+async def edit_book_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    field = context.user_data.get("edit_field")
+    book_id = context.user_data.get("edit_book_id")
+    if not field or not book_id:
+        return await end_and_show_menu(update, context, "مشکلی پیش اومد، دوباره از منو شروع کن.")
+
+    text = update.message.text.strip()
+    if field in NUMERIC_FIELDS:
+        try:
+            value = _parse_pages(text)
+        except ValueError:
+            await update.message.reply_text("باید یه عدد مثبت بفرستی.")
+            return S.EDIT_VALUE
+    else:
+        value = "" if text == "-" else text
+
+    db.update_book_field(book_id, field, value)
+    book = db.get_book(book_id)
+    await update.message.reply_text(
+        f"✅ «{FIELD_LABELS[field]}» به‌روز شد.\n\n" + format_book_info(book),
+        reply_markup=fields_kb(EDITABLE_FIELDS, "edit_field"),
+    )
+    return S.EDIT_CHOOSE_FIELD
+
+
+# -------------------------------------------------------------- حذف کتاب --
+
+async def delete_book_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        return ConversationHandler.END
+    context.user_data.clear()
+    books = db.list_books()
+    if not books:
+        return await end_and_show_menu(update, context, "هنوز کتابی ثبت نشده.")
+    await update.message.reply_text(
+        "کدوم کتاب رو پاک کنم؟", reply_markup=books_kb(books, "del_book")
+    )
+    return S.DELETE_CHOOSE_BOOK
+
+
+async def delete_book_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    book_id = int(query.data.split(":")[1])
+    book = db.get_book(book_id)
+    confirm_kb = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("🗑 بله، پاک کن", callback_data=f"del_confirm:yes:{book_id}"),
+                InlineKeyboardButton("↩️ انصراف", callback_data="del_confirm:no:0"),
+            ]
+        ]
+    )
+    await query.edit_message_text(
+        f"⚠️ با حذف کتاب «{book['title']}» برنامه، ثبت‌نام‌ها، سوالات و پاسخ‌هاش هم پاک می‌شن.\n"
+        "مطمئنی؟",
+        reply_markup=confirm_kb,
+    )
+    return S.DELETE_CONFIRM
+
+
+async def delete_book_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    _, answer, book_id = query.data.split(":")
+    if answer != "yes":
+        await query.edit_message_text("انصراف داده شد، چیزی پاک نشد.")
+        return await end_and_show_menu(update, context, "برگشتیم به منو 👇")
+
+    book = db.get_book(int(book_id))
+    db.delete_book(int(book_id))
+    await query.edit_message_text(f"🗑 کتاب «{book['title']}» پاک شد.")
+    return await end_and_show_menu(update, context, "برگشتیم به منو 👇")
 
 
 # --------------------------------------------------------- فعال‌سازی کتاب --
@@ -123,15 +265,15 @@ async def set_topic_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def activate_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return ConversationHandler.END
+    context.user_data.clear()
     drafts = db.list_books(status="draft")
     if not drafts:
-        await update.message.reply_text("کتاب آماده‌ای برای فعال‌سازی وجود نداره.")
-        return ConversationHandler.END
+        return await end_and_show_menu(update, context, "کتاب آماده‌ای برای فعال‌سازی وجود نداره.")
     await update.message.reply_text(
-        "کدوم کتاب رو فعال کنم؟ (اعلان رسمی برنامه توی تاپیک «گپ» پست می‌شه)",
+        "کدوم کتاب رو فعال کنم؟ (اعلان رسمی برنامه توی تاپیک «پیگیری» پست می‌شه)",
         reply_markup=books_kb(drafts, "activate"),
     )
-    return CHOOSE_BOOK_TO_ACTIVATE
+    return S.ACTIVATE_CHOOSE_BOOK
 
 
 async def activate_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -140,9 +282,9 @@ async def activate_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
     book_id = int(query.data.split(":")[1])
     book = db.get_book(book_id)
 
-    if not book["group_chat_id"] or not book["topic_gap_id"]:
+    if not book["group_chat_id"]:
         await query.edit_message_text(
-            "⚠️ اول باید تاپیک‌های این کتاب رو با /settopic ثبت کنی."
+            "⚠️ اول باید تاپیک «پیگیری» این کتاب رو با /settopic ثبت کنی."
         )
         return ConversationHandler.END
 
@@ -151,29 +293,37 @@ async def activate_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ اول باید برنامه روزهای همخوانی رو تعیین کنی.")
         return ConversationHandler.END
 
-    days_for_format = []
-    for d in days:
-        jd = parse_jalali(d["jalali_date"])
-        days_for_format.append({**dict(d), "jalali_date_human": format_jalali_human(jd)})
-
-    text = format_schedule_announcement(book, days_for_format)
+    text = format_schedule_announcement(book, days_with_human(days))
 
     await context.bot.send_message(
         chat_id=book["group_chat_id"],
-        message_thread_id=book["topic_gap_id"],
+        message_thread_id=book["topic_pigiri_id"],
         text=text,
     )
     db.set_book_status(book_id, "active")
-    await query.edit_message_text(f"✅ کتاب «{book['title']}» فعال شد و اعلان در تاپیک گپ پست شد.")
+    await query.edit_message_text(
+        f"✅ کتاب «{book['title']}» فعال شد و اعلان در تاپیک پیگیری پست شد."
+    )
     return ConversationHandler.END
 
 
-activate_book_conv_handler = ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^🚀 فعال‌سازی کتاب$"), activate_start)],
-    states={
-        CHOOSE_BOOK_TO_ACTIVATE: [
-            CallbackQueryHandler(activate_choose, pattern="^activate:")
-        ],
-    },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-)
+ENTRY_POINTS = [
+    MessageHandler(button_filter(BTN_NEW_BOOK), new_book_start),
+    MessageHandler(button_filter(BTN_EDIT_BOOK), edit_book_start),
+    MessageHandler(button_filter(BTN_DELETE_BOOK), delete_book_start),
+    MessageHandler(button_filter(BTN_ACTIVATE_BOOK), activate_start),
+]
+
+STATES = {
+    S.BOOK_TITLE: [MessageHandler(TEXT_INPUT, new_book_title)],
+    S.BOOK_AUTHOR: [MessageHandler(TEXT_INPUT, new_book_author)],
+    S.BOOK_DESCRIPTION: [MessageHandler(TEXT_INPUT, new_book_description)],
+    S.BOOK_PAGES: [MessageHandler(TEXT_INPUT, new_book_pages)],
+    S.BOOK_PDF_PAGES: [MessageHandler(TEXT_INPUT, new_book_pdf_pages)],
+    S.EDIT_CHOOSE_BOOK: [CallbackQueryHandler(edit_book_choose, pattern="^edit_book:")],
+    S.EDIT_CHOOSE_FIELD: [CallbackQueryHandler(edit_book_choose_field, pattern="^edit_field:")],
+    S.EDIT_VALUE: [MessageHandler(TEXT_INPUT, edit_book_value)],
+    S.DELETE_CHOOSE_BOOK: [CallbackQueryHandler(delete_book_choose, pattern="^del_book:")],
+    S.DELETE_CONFIRM: [CallbackQueryHandler(delete_book_confirm, pattern="^del_confirm:")],
+    S.ACTIVATE_CHOOSE_BOOK: [CallbackQueryHandler(activate_choose, pattern="^activate:")],
+}

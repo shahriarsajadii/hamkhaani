@@ -3,17 +3,14 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
-    CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
-    filters,
 )
 
 import database as db
-from utils.keyboards import books_kb, ADMIN_MENU
-from handlers.common import is_admin
-
-CHOOSE_BOOK, ASK_QUESTION, ASK_CONTINUE = range(3)
+from utils.keyboards import books_kb, BTN_QUESTIONS
+from handlers.common import is_admin, TEXT_INPUT, end_and_show_menu, button_filter
+from handlers.states import S
 
 CONTINUE_KB = InlineKeyboardMarkup(
     [
@@ -28,14 +25,14 @@ CONTINUE_KB = InlineKeyboardMarkup(
 async def questions_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return ConversationHandler.END
+    context.user_data.clear()
     books = db.list_books()
     if not books:
-        await update.message.reply_text("هنوز هیچ کتابی ثبت نشده.")
-        return ConversationHandler.END
+        return await end_and_show_menu(update, context, "هنوز هیچ کتابی ثبت نشده.")
     await update.message.reply_text(
         "برای کدوم کتاب می‌خوای سوال تعریف کنی؟", reply_markup=books_kb(books, "q_book")
     )
-    return CHOOSE_BOOK
+    return S.Q_CHOOSE_BOOK
 
 
 async def questions_choose_book(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -46,19 +43,20 @@ async def questions_choose_book(update: Update, context: ContextTypes.DEFAULT_TY
     existing = db.get_questions(book_id)
     context.user_data["q_next_index"] = (existing[-1]["order_index"] + 1) if existing else 1
     await query.edit_message_text("متن سوال رو بفرست:")
-    return ASK_QUESTION
+    return S.Q_ASK_TEXT
 
 
 async def questions_ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    book_id = context.user_data["q_book_id"]
+    book_id = context.user_data.get("q_book_id")
+    if not book_id:
+        return await end_and_show_menu(update, context, "مشکلی پیش اومد، دوباره از منو شروع کن.")
     idx = context.user_data["q_next_index"]
-    db.add_question(book_id, idx, text)
+    db.add_question(book_id, idx, update.message.text.strip())
     context.user_data["q_next_index"] = idx + 1
     await update.message.reply_text(
         f"✅ سوال {idx} ثبت شد. سوال بعدی رو اضافه کنم؟", reply_markup=CONTINUE_KB
     )
-    return ASK_CONTINUE
+    return S.Q_CONTINUE
 
 
 async def questions_continue_or_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -66,23 +64,16 @@ async def questions_continue_or_done(update: Update, context: ContextTypes.DEFAU
     await query.answer()
     if query.data == "q:more":
         await query.edit_message_text("متن سوال بعدی رو بفرست:")
-        return ASK_QUESTION
+        return S.Q_ASK_TEXT
 
     await query.edit_message_text("✅ سوالات این کتاب ثبت شد.")
-    context.user_data.pop("q_book_id", None)
-    context.user_data.pop("q_next_index", None)
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id, text="برگشتیم به منو 👇", reply_markup=ADMIN_MENU
-    )
-    return ConversationHandler.END
+    return await end_and_show_menu(update, context, "برگشتیم به منو 👇")
 
 
-questions_conv_handler = ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^❓ تعیین سوالات کتاب$"), questions_start)],
-    states={
-        CHOOSE_BOOK: [CallbackQueryHandler(questions_choose_book, pattern="^q_book:")],
-        ASK_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, questions_ask_question)],
-        ASK_CONTINUE: [CallbackQueryHandler(questions_continue_or_done, pattern="^q:")],
-    },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-)
+ENTRY_POINTS = [MessageHandler(button_filter(BTN_QUESTIONS), questions_start)]
+
+STATES = {
+    S.Q_CHOOSE_BOOK: [CallbackQueryHandler(questions_choose_book, pattern="^q_book:")],
+    S.Q_ASK_TEXT: [MessageHandler(TEXT_INPUT, questions_ask_question)],
+    S.Q_CONTINUE: [CallbackQueryHandler(questions_continue_or_done, pattern="^q:")],
+}
