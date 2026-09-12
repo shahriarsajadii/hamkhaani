@@ -12,20 +12,33 @@ BTN_LIST_BOOKS = "📚 لیست کتاب‌ها"
 BTN_EDIT_BOOK = "✏️ ویرایش کتاب"
 BTN_DELETE_BOOK = "🗑 حذف کتاب"
 BTN_ACTIVATE_BOOK = "🚀 فعال‌سازی کتاب"
+BTN_DEACTIVATE_BOOK = "⏸ غیرفعال‌سازی کتاب"
 
 BTN_ACTIVE_BOOKS = "📚 کتاب‌های فعال"
 BTN_MY_BOOKS = "📖 کتاب‌های من"
-BTN_TODAY_REPORT = "✅ گزارش امروز"
+BTN_TODAY_REPORT = "✅ ثبت گزارش مطالعه"
+BTN_MY_REPORTS = "📊 گزارش‌های من"
 BTN_ANSWER_QUESTIONS = "📝 پاسخ به سوالات"
 
 ADMIN_BUTTONS = [
-    BTN_NEW_BOOK, BTN_SCHEDULE, BTN_QUESTIONS, BTN_DAY_REPORT,
-    BTN_QUESTION_REPORT, BTN_LIST_BOOKS, BTN_EDIT_BOOK, BTN_DELETE_BOOK,
+    BTN_NEW_BOOK,
+    BTN_SCHEDULE,
+    BTN_QUESTIONS,
+    BTN_DAY_REPORT,
+    BTN_QUESTION_REPORT,
+    BTN_LIST_BOOKS,
+    BTN_EDIT_BOOK,
+    BTN_DELETE_BOOK,
     BTN_ACTIVATE_BOOK,
+    BTN_DEACTIVATE_BOOK,
 ]
 
 USER_BUTTONS = [
-    BTN_ACTIVE_BOOKS, BTN_MY_BOOKS, BTN_TODAY_REPORT, BTN_ANSWER_QUESTIONS,
+    BTN_ACTIVE_BOOKS,
+    BTN_MY_BOOKS,
+    BTN_TODAY_REPORT,
+    BTN_MY_REPORTS,
+    BTN_ANSWER_QUESTIONS,
 ]
 
 ALL_MENU_BUTTONS = ADMIN_BUTTONS + USER_BUTTONS
@@ -36,7 +49,7 @@ ADMIN_MENU = ReplyKeyboardMarkup(
         [BTN_QUESTIONS, BTN_DAY_REPORT],
         [BTN_QUESTION_REPORT, BTN_LIST_BOOKS],
         [BTN_EDIT_BOOK, BTN_DELETE_BOOK],
-        [BTN_ACTIVATE_BOOK],
+        [BTN_ACTIVATE_BOOK, BTN_DEACTIVATE_BOOK],
     ],
     resize_keyboard=True,
 )
@@ -44,7 +57,8 @@ ADMIN_MENU = ReplyKeyboardMarkup(
 USER_MENU = ReplyKeyboardMarkup(
     [
         [BTN_ACTIVE_BOOKS, BTN_MY_BOOKS],
-        [BTN_TODAY_REPORT, BTN_ANSWER_QUESTIONS],
+        [BTN_TODAY_REPORT, BTN_MY_REPORTS],
+        [BTN_ANSWER_QUESTIONS],
     ],
     resize_keyboard=True,
 )
@@ -71,8 +85,20 @@ def books_kb(books, prefix: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def books_with_status_kb(books, prefix: str, status_labels: dict) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                f"{b['title']} — {status_labels.get(b['status'], b['status'])}",
+                callback_data=f"{prefix}:{b['id']}",
+            )
+        ]
+        for b in books
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
 def fields_kb(fields, prefix: str) -> InlineKeyboardMarkup:
-    """fields لیستی از (key, label) است."""
     rows = [
         [InlineKeyboardButton(label, callback_data=f"{prefix}:{key}")]
         for key, label in fields
@@ -80,29 +106,100 @@ def fields_kb(fields, prefix: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def reading_days_kb(days, prefix: str) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(f"روز {d['day_index']} - {d['jalali_date']}",
-                               callback_data=f"{prefix}:{d['id']}")]
-        for d in days
-    ]
+def reading_days_kb(days, prefix: str, status_by_day=None) -> InlineKeyboardMarkup:
+    rows = []
+    status_by_day = status_by_day or {}
+
+    for d in days:
+        suffix = ""
+        if d["id"] in status_by_day:
+            suffix = f" | {status_by_day[d['id']]}"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"روز {d['day_index']} - {d['jalali_date']}{suffix}",
+                    callback_data=f"{prefix}:{d['id']}",
+                )
+            ]
+        )
+
     return InlineKeyboardMarkup(rows)
 
 
 def questions_kb(questions, prefix: str) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(f"سوال {q['order_index']}", callback_data=f"{prefix}:{q['id']}")]
+        [
+            InlineKeyboardButton(
+                f"سوال {q['order_index']}", callback_data=f"{prefix}:{q['id']}"
+            )
+        ]
         for q in questions
     ]
     return InlineKeyboardMarkup(rows)
+
+
+def question_manage_kb(questions) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                f"❓ {q['order_index']} - {q['text'][:55]}",
+                callback_data=f"q_item:{q['id']}",
+            )
+        ]
+        for q in questions
+    ]
+    rows.append(
+        [InlineKeyboardButton("➕ سوال جدید", callback_data="q_action:add")]
+    )
+    rows.append(
+        [InlineKeyboardButton("✅ پایان", callback_data="q_action:done")]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def question_actions_kb(question_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "✏️ ویرایش", callback_data=f"q_edit:{question_id}"
+                ),
+                InlineKeyboardButton(
+                    "🗑 حذف", callback_data=f"q_delete:{question_id}"
+                ),
+            ],
+            [InlineKeyboardButton("↩️ بازگشت", callback_data="q_action:back")],
+        ]
+    )
+
+
+def confirm_delete_question_kb(question_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "🗑 بله، حذف کن",
+                    callback_data=f"q_delconfirm:yes:{question_id}",
+                ),
+                InlineKeyboardButton(
+                    "↩️ انصراف",
+                    callback_data=f"q_delconfirm:no:{question_id}",
+                ),
+            ]
+        ]
+    )
 
 
 def confirm_kb(prefix: str, ref_id) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("✅ تأیید و ثبت", callback_data=f"{prefix}:confirm:{ref_id}"),
-                InlineKeyboardButton("❌ انصراف", callback_data=f"{prefix}:cancel:{ref_id}"),
+                InlineKeyboardButton(
+                    "✅ تأیید و ثبت", callback_data=f"{prefix}:confirm:{ref_id}"
+                ),
+                InlineKeyboardButton(
+                    "❌ انصراف", callback_data=f"{prefix}:cancel:{ref_id}"
+                ),
             ]
         ]
     )

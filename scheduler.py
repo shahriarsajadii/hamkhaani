@@ -40,6 +40,9 @@ async def send_daily_reminders(context: ContextTypes.DEFAULT_TYPE):
         )
 
         for u in users:
+            progress = db.get_progress_for_user(rday['id'], u['id'])
+            if progress and progress['status'] != 'pending':
+                continue
             try:
                 await context.bot.send_message(
                     chat_id=u["telegram_id"],

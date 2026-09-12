@@ -1,10 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-تمام state های گفتگوها در یک enum یکتا جمع شده‌اند.
-
-دلیلش این است که کل ربات یک ConversationHandler واحد (با allow_reentry) دارد؛
-این‌طوری هر دکمه‌ی منو در هر لحظه کار می‌کند و هیچ‌وقت گیر گفتگوی نیمه‌کاره‌ی قبلی نمی‌ماند.
-"""
 from enum import IntEnum, auto
 
 
@@ -28,6 +22,10 @@ class S(IntEnum):
     # فعال‌سازی کتاب
     ACTIVATE_CHOOSE_BOOK = auto()
 
+    # غیرفعال‌سازی کتاب
+    DEACTIVATE_CHOOSE_BOOK = auto()
+    DEACTIVATE_CONFIRM = auto()
+
     # برنامه همخوانی
     SCHED_CHOOSE_BOOK = auto()
     SCHED_ACTION = auto()
@@ -41,6 +39,10 @@ class S(IntEnum):
 
     # سوالات
     Q_CHOOSE_BOOK = auto()
+    Q_MANAGE_LIST = auto()
+    Q_MANAGE_ITEM = auto()
+    Q_EDIT_TEXT = auto()
+    Q_DELETE_CONFIRM = auto()
     Q_ASK_TEXT = auto()
     Q_CONTINUE = auto()
 
@@ -54,6 +56,9 @@ class S(IntEnum):
 
     # ثبت‌نام کاربر
     REG_CHOOSE_BOOK = auto()
+    REPORT_CHOOSE_BOOK = auto()
+    REPORT_CHOOSE_DAY = auto()
+    MYREPORT_CHOOSE_BOOK = auto()
 
     # پاسخ کاربر به سوالات
     ANS_CHOOSE_BOOK = auto()

@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-مسیرهای ادمین برای کتاب:
-  1) ساخت کتاب جدید (عنوان، نویسنده، توضیحات، تعداد صفحات کتاب، تعداد صفحات پی‌دی‌اف)
-  2) اتصال تاپیک «پیگیری»: ادمین داخل همان تاپیک دستور /settopic <book_id> را می‌فرستد.
-  3) ویرایش کتاب
-  4) حذف کتاب
-  5) فعال‌سازی کتاب: اعلان رسمی در تاپیک «پیگیری» پست می‌شود.
+مسیرهای ادمین برای کتاب - نسخه اصلاح‌شده:
+
+تغییرات:
+- اضافه شدن «غیرفعال‌سازی کتاب» (active -> draft)
+- دکمه‌های برگشت در مراحل چندگانه
 """
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -20,11 +19,13 @@ from utils.keyboards import (
     ADMIN_MENU,
     CANCEL_KB,
     books_kb,
+    books_with_status_kb,
     fields_kb,
     BTN_NEW_BOOK,
     BTN_EDIT_BOOK,
     BTN_DELETE_BOOK,
     BTN_ACTIVATE_BOOK,
+    BTN_DEACTIVATE_BOOK,
 )
 from utils.formatting import format_schedule_announcement, format_book_info
 from utils.jalali import days_with_human
@@ -47,6 +48,13 @@ def _parse_pages(text: str) -> int:
     if value < 1:
         raise ValueError
     return value
+
+
+def _back_to_fields_kb(book_id: int) -> InlineKeyboardMarkup:
+    """کیبورد برگشت به انتخاب فیلد ویرایش."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("↩️ برگشت به انتخاب فیلد", callback_data=f"edit_book:{book_id}")]
+    ])
 
 
 # ------------------------------------------------------------- ساخت کتاب --
@@ -181,7 +189,10 @@ async def edit_book_choose_field(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     field = query.data.split(":")[1]
     context.user_data["edit_field"] = field
-    await query.edit_message_text(f"مقدار جدید برای «{FIELD_LABELS[field]}» رو بفرست:")
+    await query.edit_message_text(
+        f"مقدار جدید برای «{FIELD_LABELS[field]}» رو بفرست:\n\n"
+        "(برای انصراف /cancel بزن)"
+    )
     return S.EDIT_VALUE
 
 
@@ -266,12 +277,18 @@ async def activate_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return ConversationHandler.END
     context.user_data.clear()
-    drafts = db.list_books(status="draft")
-    if not drafts:
-        return await end_and_show_menu(update, context, "کتاب آماده‌ای برای فعال‌سازی وجود نداره.")
+    books = db.list_books()
+    if not books:
+        return await end_and_show_menu(update, context, "هنوز هیچ کتابی ثبت نشده.")
+
+    status_labels = {
+        "draft": "⏳ غیرفعال",
+        "active": "✅ فعال",
+        "finished": "🏁 پایان‌یافته",
+    }
     await update.message.reply_text(
-        "کدوم کتاب رو فعال کنم؟ (اعلان رسمی برنامه توی تاپیک «پیگیری» پست می‌شه)",
-        reply_markup=books_kb(drafts, "activate"),
+        "همهٔ کتاب‌ها و وضعیت آن‌ها:",
+        reply_markup=books_with_status_kb(books, "activate", status_labels),
     )
     return S.ACTIVATE_CHOOSE_BOOK
 
@@ -281,6 +298,17 @@ async def activate_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     book_id = int(query.data.split(":")[1])
     book = db.get_book(book_id)
+    if not book:
+        await query.edit_message_text("این کتاب دیگر وجود ندارد.")
+        return ConversationHandler.END
+
+    if book["status"] == "active":
+        await query.edit_message_text(f"✅ کتاب «{book['title']}» از قبل فعال است.")
+        return ConversationHandler.END
+
+    if book["status"] == "finished":
+        await query.edit_message_text(f"🏁 کتاب «{book['title']}» پایان‌یافته است و قابل فعال‌سازی نیست.")
+        return ConversationHandler.END
 
     if not book["group_chat_id"]:
         await query.edit_message_text(
@@ -307,11 +335,70 @@ async def activate_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+# --------------------------------------------------------- غیرفعال‌سازی کتاب --
+
+async def deactivate_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        return ConversationHandler.END
+    context.user_data.clear()
+    # فقط کتاب‌های فعال را نشان می‌دهیم
+    books = db.list_books(status="active")
+    if not books:
+        return await end_and_show_menu(update, context, "هیچ کتاب فعالی برای غیرفعال‌سازی وجود ندارد.")
+    await update.message.reply_text(
+        "کدوم کتاب رو غیرفعال کنم؟",
+        reply_markup=books_kb(books, "deactivate"),
+    )
+    return S.DEACTIVATE_CHOOSE_BOOK
+
+
+async def deactivate_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    book_id = int(query.data.split(":")[1])
+    book = db.get_book(book_id)
+    if not book:
+        await query.edit_message_text("این کتاب دیگر وجود ندارد.")
+        return ConversationHandler.END
+
+    if book["status"] != "active":
+        await query.edit_message_text("این کتاب فعال نیست.")
+        return ConversationHandler.END
+
+    confirm_kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⏸ بله، غیرفعال کن", callback_data=f"deact_confirm:yes:{book_id}"),
+            InlineKeyboardButton("↩️ انصراف", callback_data="deact_confirm:no:0"),
+        ]
+    ])
+    await query.edit_message_text(
+        f"⚠️ مطمئنی می‌خوای کتاب «{book['title']}» رو غیرفعال کنی؟\n"
+        "ثبت‌نام‌ها و گزارش‌ها حفظ می‌شوند ولی کاربران دیگر نمی‌توانند گزارش جدید بدهند.",
+        reply_markup=confirm_kb,
+    )
+    return S.DEACTIVATE_CONFIRM
+
+
+async def deactivate_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    _, answer, book_id = query.data.split(":")
+    if answer != "yes":
+        await query.edit_message_text("انصراف داده شد.")
+        return await end_and_show_menu(update, context, "برگشتیم به منو 👇")
+
+    book = db.get_book(int(book_id))
+    db.set_book_status(int(book_id), "draft")
+    await query.edit_message_text(f"⏸ کتاب «{book['title']}» غیرفعال شد.")
+    return await end_and_show_menu(update, context, "برگشتیم به منو 👇")
+
+
 ENTRY_POINTS = [
     MessageHandler(button_filter(BTN_NEW_BOOK), new_book_start),
     MessageHandler(button_filter(BTN_EDIT_BOOK), edit_book_start),
     MessageHandler(button_filter(BTN_DELETE_BOOK), delete_book_start),
     MessageHandler(button_filter(BTN_ACTIVATE_BOOK), activate_start),
+    MessageHandler(button_filter(BTN_DEACTIVATE_BOOK), deactivate_start),
 ]
 
 STATES = {
@@ -326,4 +413,6 @@ STATES = {
     S.DELETE_CHOOSE_BOOK: [CallbackQueryHandler(delete_book_choose, pattern="^del_book:")],
     S.DELETE_CONFIRM: [CallbackQueryHandler(delete_book_confirm, pattern="^del_confirm:")],
     S.ACTIVATE_CHOOSE_BOOK: [CallbackQueryHandler(activate_choose, pattern="^activate:")],
+    S.DEACTIVATE_CHOOSE_BOOK: [CallbackQueryHandler(deactivate_choose, pattern="^deactivate:")],
+    S.DEACTIVATE_CONFIRM: [CallbackQueryHandler(deactivate_confirm, pattern="^deact_confirm:")],
 }

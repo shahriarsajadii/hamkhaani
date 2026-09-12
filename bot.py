@@ -1,6 +1,6 @@
-
 import logging
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 import database as db
 from config import BOT_TOKEN
@@ -16,12 +16,32 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def group_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    در گروه‌ها فقط /settopic مجاز است.
+    هر پیام یا دستور دیگری از کاربران (حتی ادمین) نادیده گرفته می‌شود.
+    """
+    # این هندلر هیچ پاسخی نمی‌دهد - فقط آپدیت را می‌بلعد
+    return
+
+
 def main():
     db.init_db()
 
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # گفتگوی واحد ربات (منوی ادمین و کاربر)
+    # فیلتر پیام‌های گروهی: همه‌چیز رو بلوک کن به‌جز /settopic
+    group_filter = (
+        filters.ChatType.GROUPS
+        & ~filters.Regex(r"^/settopic")
+    )
+    # این هندلر باید اول از همه اضافه بشه تا اولویت داشته باشه
+    application.add_handler(
+        MessageHandler(group_filter, group_guard),
+        group=-1,  # group=-1 یعنی قبل از همه هندلرها بررسی می‌شه
+    )
+
+    # گفتگوی واحد ربات (فقط در پیوی کار می‌کند)
     application.add_handler(build_conversation())
 
     # دستورات مستقل
@@ -29,10 +49,10 @@ def main():
     application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CommandHandler("settopic", set_topic_command))
 
-    # پاسخ بله/خیر یادآوری روزانه
+    # پاسخ «خواندم» از یادآوری روزانه یا دکمه inline
     application.add_handler(tracking_callback_handler)
 
-    # فال‌بک برای پیام‌های ناشناخته (باید آخر از همه اضافه بشه)
+    # فال‌بک برای پیام‌های ناشناخته (آخر از همه)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_message))
 
     # جاب روزانه یادآوری

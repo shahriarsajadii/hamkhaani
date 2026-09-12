@@ -24,20 +24,21 @@ CREATE TABLE IF NOT EXISTS books (
     title TEXT NOT NULL,
     author TEXT,
     description TEXT,
-    book_pages INTEGER,        -- تعداد کل صفحات کتاب چاپی
-    pdf_pages INTEGER,         -- تعداد کل صفحات فایل پی‌دی‌اف
+    book_pages INTEGER,
+    pdf_pages INTEGER,
     group_chat_id INTEGER,
-    topic_pigiri_id INTEGER,   -- تاپیک پیگیری
-    status TEXT DEFAULT 'draft',  -- draft / active / finished
+    topic_pigiri_id INTEGER,
+    status TEXT DEFAULT 'draft'
+        CHECK(status IN ('draft', 'active', 'finished')),
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS reading_days (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     book_id INTEGER NOT NULL,
-    day_index INTEGER NOT NULL,       -- ترتیب روز در برنامه (1,2,3,...)
-    jalali_date TEXT NOT NULL,        -- ذخیره خام مثل '1403/06/21'
-    gregorian_date TEXT NOT NULL,     -- برای زمان‌بندی، مثل '2024-09-11'
+    day_index INTEGER NOT NULL,
+    jalali_date TEXT NOT NULL,
+    gregorian_date TEXT NOT NULL,
     book_page_from INTEGER,
     book_page_to INTEGER,
     pdf_page_from INTEGER,
@@ -52,15 +53,15 @@ CREATE TABLE IF NOT EXISTS registrations (
     user_id INTEGER NOT NULL,
     registered_at TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(book_id, user_id),
-    FOREIGN KEY(book_id) REFERENCES books(id),
-    FOREIGN KEY(user_id) REFERENCES users(id)
+    FOREIGN KEY(book_id) REFERENCES books(id)
 );
 
 CREATE TABLE IF NOT EXISTS daily_progress (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     reading_day_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
-    status TEXT DEFAULT 'pending',   -- pending / read / not_read
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending', 'read', 'not_read')),
     reported_at TEXT,
     UNIQUE(reading_day_id, user_id),
     FOREIGN KEY(reading_day_id) REFERENCES reading_days(id),
@@ -118,14 +119,16 @@ def _migrate(conn: sqlite3.Connection):
 
 def upsert_user(telegram_id: int, username: Optional[str], full_name: str) -> int:
     with get_conn() as conn:
-        cur = conn.execute("SELECT id FROM users WHERE telegram_id=?", (telegram_id,))
-        row = cur.fetchone()
+        row = conn.execute(
+            "SELECT id FROM users WHERE telegram_id=?", (telegram_id,)
+        ).fetchone()
         if row:
             conn.execute(
                 "UPDATE users SET username=?, full_name=? WHERE telegram_id=?",
                 (username, full_name, telegram_id),
             )
             return row["id"]
+
         cur = conn.execute(
             "INSERT INTO users (telegram_id, username, full_name) VALUES (?,?,?)",
             (telegram_id, username, full_name),
@@ -147,11 +150,17 @@ def get_user_by_id(user_id: int) -> Optional[sqlite3.Row]:
 
 # ---------------------------------------------------------------- books ----
 
-def create_book(title: str, author: str, description: str,
-                book_pages: Optional[int] = None, pdf_pages: Optional[int] = None) -> int:
+def create_book(
+    title: str,
+    author: str,
+    description: str,
+    book_pages: Optional[int] = None,
+    pdf_pages: Optional[int] = None,
+) -> int:
     with get_conn() as conn:
         cur = conn.execute(
-            """INSERT INTO books (title, author, description, book_pages, pdf_pages, status)
+            """INSERT INTO books
+               (title, author, description, book_pages, pdf_pages, status)
                VALUES (?,?,?,?,?, 'draft')""",
             (title, author, description, book_pages, pdf_pages),
         )
@@ -188,7 +197,6 @@ def delete_book(book_id: int):
 
 
 def set_book_topic(book_id: int, group_chat_id: int, thread_id: Optional[int]):
-    """تاپیک «پیگیری» کتاب را ثبت می‌کند (تنها تاپیک موردنیاز ربات)."""
     with get_conn() as conn:
         conn.execute(
             "UPDATE books SET group_chat_id=?, topic_pigiri_id=? WHERE id=?",
@@ -197,6 +205,8 @@ def set_book_topic(book_id: int, group_chat_id: int, thread_id: Optional[int]):
 
 
 def set_book_status(book_id: int, status: str):
+    if status not in {"draft", "active", "finished"}:
+        raise ValueError("وضعیت کتاب نامعتبر است.")
     with get_conn() as conn:
         conn.execute("UPDATE books SET status=? WHERE id=?", (status, book_id))
 
@@ -217,15 +227,32 @@ def list_books(status: Optional[str] = None) -> List[sqlite3.Row]:
 
 # --------------------------------------------------------- reading days ----
 
-def add_reading_day(book_id: int, day_index: int, jalali_date: str, gregorian_date: str,
-                     book_from: int, book_to: int, pdf_from: int, pdf_to: int) -> int:
+def add_reading_day(
+    book_id: int,
+    day_index: int,
+    jalali_date: str,
+    gregorian_date: str,
+    book_from: int,
+    book_to: int,
+    pdf_from: int,
+    pdf_to: int,
+) -> int:
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO reading_days
                (book_id, day_index, jalali_date, gregorian_date,
                 book_page_from, book_page_to, pdf_page_from, pdf_page_to)
                VALUES (?,?,?,?,?,?,?,?)""",
-            (book_id, day_index, jalali_date, gregorian_date, book_from, book_to, pdf_from, pdf_to),
+            (
+                book_id,
+                day_index,
+                jalali_date,
+                gregorian_date,
+                book_from,
+                book_to,
+                pdf_from,
+                pdf_to,
+            ),
         )
         return cur.lastrowid
 
@@ -259,9 +286,16 @@ def replace_reading_days(book_id: int, days: List[Dict[str, Any]]):
                    (book_id, day_index, jalali_date, gregorian_date,
                     book_page_from, book_page_to, pdf_page_from, pdf_page_to)
                    VALUES (?,?,?,?,?,?,?,?)""",
-                (book_id, idx, d["jalali_date"], d["gregorian_date"],
-                 d["book_page_from"], d["book_page_to"],
-                 d["pdf_page_from"], d["pdf_page_to"]),
+                (
+                    book_id,
+                    idx,
+                    d["jalali_date"],
+                    d["gregorian_date"],
+                    d["book_page_from"],
+                    d["book_page_to"],
+                    d["pdf_page_from"],
+                    d["pdf_page_to"],
+                ),
             )
 
 
@@ -282,7 +316,6 @@ def mark_reminder_sent(reading_day_id: int):
 # -------------------------------------------------------- registrations ----
 
 def register_user_to_book(book_id: int, user_id: int) -> bool:
-    """True اگر ثبت‌نام جدید انجام شد، False اگر قبلاً بوده."""
     with get_conn() as conn:
         try:
             conn.execute(
@@ -319,13 +352,16 @@ def get_user_books(user_id: int, status: Optional[str] = None) -> List[sqlite3.R
             return conn.execute(
                 """SELECT b.* FROM books b
                    JOIN registrations r ON r.book_id = b.id
-                   WHERE r.user_id=? AND b.status=?""",
+                   WHERE r.user_id=? AND b.status=?
+                   ORDER BY b.id DESC""",
                 (user_id, status),
             ).fetchall()
+
         return conn.execute(
             """SELECT b.* FROM books b
                JOIN registrations r ON r.book_id = b.id
-               WHERE r.user_id=?""",
+               WHERE r.user_id=?
+               ORDER BY b.id DESC""",
             (user_id,),
         ).fetchall()
 
@@ -333,47 +369,158 @@ def get_user_books(user_id: int, status: Optional[str] = None) -> List[sqlite3.R
 # ------------------------------------------------------- daily progress ----
 
 def ensure_progress_rows(reading_day_id: int, book_id: int):
-    """برای همه کاربران ثبت‌نام‌کرده در این کتاب، یک ردیف pending می‌سازد (اگر نبود)."""
+    """برای همه کاربران ثبت‌نام‌کرده در این کتاب، یک ردیف pending می‌سازد."""
     with get_conn() as conn:
         users = conn.execute(
             "SELECT user_id FROM registrations WHERE book_id=?", (book_id,)
         ).fetchall()
-        for u in users:
+        for user in users:
             conn.execute(
-                """INSERT OR IGNORE INTO daily_progress (reading_day_id, user_id, status)
+                """INSERT OR IGNORE INTO daily_progress
+                   (reading_day_id, user_id, status)
                    VALUES (?, ?, 'pending')""",
-                (reading_day_id, u["user_id"]),
+                (reading_day_id, user["user_id"]),
             )
 
 
-def set_progress(reading_day_id: int, user_id: int, status: str):
+def get_progress_for_user(reading_day_id: int, user_id: int) -> Optional[sqlite3.Row]:
     with get_conn() as conn:
-        conn.execute(
-            """INSERT INTO daily_progress (reading_day_id, user_id, status, reported_at)
-               VALUES (?, ?, ?, ?)
-               ON CONFLICT(reading_day_id, user_id)
-               DO UPDATE SET status=excluded.status, reported_at=excluded.reported_at""",
-            (reading_day_id, user_id, status, datetime.datetime.now().isoformat()),
+        return conn.execute(
+            """SELECT * FROM daily_progress
+               WHERE reading_day_id=? AND user_id=?""",
+            (reading_day_id, user_id),
+        ).fetchone()
+
+
+def set_progress(reading_day_id: int, user_id: int, status: str) -> bool:
+    """
+    گزارش روزانه را فقط یک‌بار ثبت می‌کند.
+
+    True  -> گزارش جدید ثبت شد.
+    False -> قبلاً برای همین روز گزارشی ثبت شده و قابل تغییر نیست.
+    """
+    if status not in {"read", "not_read"}:
+        raise ValueError("وضعیت گزارش نامعتبر است.")
+
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        cur = conn.execute(
+            """UPDATE daily_progress
+               SET status=?, reported_at=?
+               WHERE reading_day_id=? AND user_id=? AND status='pending'""",
+            (status, now, reading_day_id, user_id),
         )
+        if cur.rowcount == 1:
+            return True
+
+        cur = conn.execute(
+            """INSERT INTO daily_progress
+               (reading_day_id, user_id, status, reported_at)
+               SELECT ?, ?, ?, ?
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM daily_progress
+                   WHERE reading_day_id=? AND user_id=?
+               )""",
+            (reading_day_id, user_id, status, now, reading_day_id, user_id),
+        )
+        return cur.rowcount == 1
 
 
 def get_progress_for_day(reading_day_id: int) -> List[sqlite3.Row]:
+    """
+    همه ثبت‌نامی‌های کتاب را برمی‌گرداند؛ حتی اگر هنوز رکورد daily_progress
+    برایشان ساخته نشده باشد، در این حالت status برابر pending است.
+    """
     with get_conn() as conn:
         return conn.execute(
-            """SELECT dp.*, u.full_name, u.username, u.telegram_id
-               FROM daily_progress dp
-               JOIN users u ON u.id = dp.user_id
-               WHERE dp.reading_day_id=?""",
+            """SELECT
+                   COALESCE(dp.id, -1) AS id,
+                   rd.id AS reading_day_id,
+                   u.id AS user_id,
+                   COALESCE(dp.status, 'pending') AS status,
+                   dp.reported_at,
+                   u.full_name,
+                   u.username,
+                   u.telegram_id
+               FROM reading_days rd
+               JOIN registrations reg
+                 ON reg.book_id = rd.book_id
+               JOIN users u
+                 ON u.id = reg.user_id
+               LEFT JOIN daily_progress dp
+                 ON dp.reading_day_id = rd.id
+                AND dp.user_id = u.id
+               WHERE rd.id=?
+               ORDER BY u.id""",
             (reading_day_id,),
         ).fetchall()
 
 
-def get_pending_progress_for_user(user_id: int, reading_day_id: int) -> Optional[sqlite3.Row]:
+def get_user_book_progress(user_id: int, book_id: int) -> List[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute(
-            "SELECT * FROM daily_progress WHERE reading_day_id=? AND user_id=?",
-            (reading_day_id, user_id),
+            """SELECT
+                   rd.id AS reading_day_id,
+                   rd.day_index,
+                   rd.jalali_date,
+                   rd.gregorian_date,
+                   rd.book_page_from,
+                   rd.book_page_to,
+                   rd.pdf_page_from,
+                   rd.pdf_page_to,
+                   COALESCE(dp.status, 'pending') AS status,
+                   dp.reported_at
+               FROM reading_days rd
+               LEFT JOIN daily_progress dp
+                 ON dp.reading_day_id = rd.id
+                AND dp.user_id = ?
+               WHERE rd.book_id=?
+               ORDER BY rd.day_index""",
+            (user_id, book_id),
+        ).fetchall()
+
+
+def can_user_answer_book(user_id: int, book_id: int) -> bool:
+    """
+    کاربر فقط وقتی می‌تواند سوالات را ببیند که:
+      - در کتاب ثبت‌نام کرده باشد.
+      - برای همه روزهای برنامه گزارش ثبت شده باشد.
+      - همه گزارش‌ها وضعیت read داشته باشند.
+    """
+    with get_conn() as conn:
+        registered = conn.execute(
+            "SELECT 1 FROM registrations WHERE book_id=? AND user_id=?",
+            (book_id, user_id),
         ).fetchone()
+        if not registered:
+            return False
+
+        total_days = conn.execute(
+            "SELECT COUNT(*) AS count FROM reading_days WHERE book_id=?",
+            (book_id,),
+        ).fetchone()["count"]
+
+        if total_days == 0:
+            return False
+
+        unread_or_unreported = conn.execute(
+            """SELECT COUNT(*) AS count
+               FROM reading_days rd
+               LEFT JOIN daily_progress dp
+                 ON dp.reading_day_id = rd.id
+                AND dp.user_id = ?
+               WHERE rd.book_id=?
+                 AND COALESCE(dp.status, 'pending') <> 'read'""",
+            (user_id, book_id),
+        ).fetchone()["count"]
+
+        return unread_or_unreported == 0
+
+
+def get_pending_progress_for_user(
+    user_id: int, reading_day_id: int
+) -> Optional[sqlite3.Row]:
+    return get_progress_for_user(reading_day_id, user_id)
 
 
 # -------------------------------------------------------------- questions --
@@ -390,13 +537,35 @@ def add_question(book_id: int, order_index: int, text: str) -> int:
 def get_questions(book_id: int) -> List[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute(
-            "SELECT * FROM questions WHERE book_id=? ORDER BY order_index", (book_id,)
+            "SELECT * FROM questions WHERE book_id=? ORDER BY order_index, id",
+            (book_id,),
         ).fetchall()
 
 
 def get_question(question_id: int) -> Optional[sqlite3.Row]:
     with get_conn() as conn:
-        return conn.execute("SELECT * FROM questions WHERE id=?", (question_id,)).fetchone()
+        return conn.execute(
+            "SELECT * FROM questions WHERE id=?", (question_id,)
+        ).fetchone()
+
+
+def update_question(question_id: int, text: str):
+    text = text.strip()
+    if not text:
+        raise ValueError("متن سوال نمی‌تواند خالی باشد.")
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE questions SET text=? WHERE id=?", (text, question_id)
+        )
+
+
+def delete_question(question_id: int):
+    """
+    پاسخ‌های وابسته هم حذف می‌شوند تا به خاطر Foreign Key حذف سوال شکست نخورد.
+    """
+    with get_conn() as conn:
+        conn.execute("DELETE FROM answers WHERE question_id=?", (question_id,))
+        conn.execute("DELETE FROM questions WHERE id=?", (question_id,))
 
 
 # ----------------------------------------------------------------- answers -
@@ -404,9 +573,11 @@ def get_question(question_id: int) -> Optional[sqlite3.Row]:
 def save_answer(question_id: int, user_id: int, text: str):
     with get_conn() as conn:
         conn.execute(
-            """INSERT INTO answers (question_id, user_id, text) VALUES (?,?,?)
-               ON CONFLICT(question_id, user_id) DO UPDATE SET text=excluded.text,
-               answered_at=CURRENT_TIMESTAMP""",
+            """INSERT INTO answers (question_id, user_id, text)
+               VALUES (?,?,?)
+               ON CONFLICT(question_id, user_id)
+               DO UPDATE SET text=excluded.text,
+                             answered_at=CURRENT_TIMESTAMP""",
             (question_id, user_id, text),
         )
 
@@ -423,8 +594,10 @@ def has_answered(question_id: int, user_id: int) -> bool:
 def get_answers_for_question(question_id: int) -> List[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute(
-            """SELECT a.*, u.full_name, u.username FROM answers a
+            """SELECT a.*, u.full_name, u.username, u.telegram_id
+               FROM answers a
                JOIN users u ON u.id = a.user_id
-               WHERE a.question_id=? ORDER BY a.answered_at""",
+               WHERE a.question_id=?
+               ORDER BY a.answered_at""",
             (question_id,),
         ).fetchall()

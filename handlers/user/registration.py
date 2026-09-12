@@ -31,6 +31,13 @@ async def registration_choose(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     book_id = int(query.data.split(":")[1])
     book = db.get_book(book_id)
+    if not book:
+        await query.edit_message_text("این کتاب دیگر وجود ندارد.")
+        return ConversationHandler.END
+
+    if book["status"] != "active":
+        await query.edit_message_text("این کتاب دیگر فعال نیست و ثبت‌نام در آن ممکن نیست.")
+        return ConversationHandler.END
 
     tg_user = update.effective_user
     db.upsert_user(tg_user.id, tg_user.username, tg_user.full_name)
