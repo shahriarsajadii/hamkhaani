@@ -6,7 +6,36 @@ from typing import List
 import sqlite3
 
 
-def format_schedule_announcement(book: sqlite3.Row, days: List[sqlite3.Row]) -> str:
+def format_schedule_days(days: List[dict]) -> str:
+    """
+    فقط لیست روزها، بدون سربرگ:
+
+    🗓 21 شهریور
+    📚 کتاب: صفحه 1 تا 30
+    💻 پی دی اف : 3 تا 15
+    """
+    lines = []
+    for d in days:
+        lines.append(f"🗓 {d['jalali_date_human']}")
+        lines.append(f"📚 کتاب: صفحه {d['book_page_from']} تا {d['book_page_to']}")
+        lines.append(f"💻 پی دی اف : {d['pdf_page_from']} تا {d['pdf_page_to']}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def format_book_info(book: sqlite3.Row) -> str:
+    lines = [
+        f"📖 «{book['title']}»",
+        f"✍️ نویسنده: {book['author'] or '—'}",
+        f"📄 صفحات کتاب: {book['book_pages'] or '—'}",
+        f"💻 صفحات پی‌دی‌اف: {book['pdf_pages'] or '—'}",
+    ]
+    if book["description"]:
+        lines.append(f"📝 {book['description']}")
+    return "\n".join(lines)
+
+
+def format_schedule_announcement(book: sqlite3.Row, days: List[dict]) -> str:
     """
     خروجی دقیقاً مطابق فرمتی که کاربر نمونه داده:
 
@@ -30,12 +59,8 @@ def format_schedule_announcement(book: sqlite3.Row, days: List[sqlite3.Row]) -> 
         f"🌤 از {first_day}، همراه با این کتاب همراه شویم :)",
         "",
     ]
-    for d in days:
-        lines.append(f"🗓 {d['jalali_date_human']}")
-        lines.append(f"📚 کتاب: صفحه {d['book_page_from']} تا {d['book_page_to']}")
-        lines.append(f"💻 پی دی اف : {d['pdf_page_from']} تا {d['pdf_page_to']}")
-        lines.append("")
-
+    lines.append(format_schedule_days(days))
+    lines.append("")
     lines.append(f"🌵 پایان سفر: {last_day}")
     return "\n".join(lines)
 

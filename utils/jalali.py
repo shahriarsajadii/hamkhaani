@@ -41,3 +41,12 @@ def format_jalali_full(jdate: jdatetime.date) -> str:
 
 def today_jalali() -> jdatetime.date:
     return jdatetime.date.today()
+
+
+def days_with_human(days) -> list:
+    """ردیف‌های reading_days را به دیکشنری‌هایی با کلید jalali_date_human تبدیل می‌کند."""
+    result = []
+    for d in days:
+        jd = parse_jalali(d["jalali_date"])
+        result.append({**dict(d), "jalali_date_human": format_jalali_human(jd)})
+    return result

@@ -24,10 +24,10 @@ CREATE TABLE IF NOT EXISTS books (
     title TEXT NOT NULL,
     author TEXT,
     description TEXT,
+    book_pages INTEGER,        -- تعداد کل صفحات کتاب چاپی
+    pdf_pages INTEGER,         -- تعداد کل صفحات فایل پی‌دی‌اف
     group_chat_id INTEGER,
     topic_pigiri_id INTEGER,   -- تاپیک پیگیری
-    topic_boride_id INTEGER,   -- تاپیک بریده‌ها
-    topic_gap_id INTEGER,      -- تاپیک گپ
     status TEXT DEFAULT 'draft',  -- draft / active / finished
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -103,6 +103,15 @@ def get_conn():
 def init_db():
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection):
+    """ستون‌های جدید را به دیتابیس‌های قدیمی اضافه می‌کند."""
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(books)").fetchall()}
+    for column in ("book_pages", "pdf_pages"):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE books ADD COLUMN {column} INTEGER")
 
 
 # ---------------------------------------------------------------- users ----
@@ -138,28 +147,51 @@ def get_user_by_id(user_id: int) -> Optional[sqlite3.Row]:
 
 # ---------------------------------------------------------------- books ----
 
-def create_book(title: str, author: str, description: str) -> int:
+def create_book(title: str, author: str, description: str,
+                book_pages: Optional[int] = None, pdf_pages: Optional[int] = None) -> int:
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO books (title, author, description, status) VALUES (?,?,?, 'draft')",
-            (title, author, description),
+            """INSERT INTO books (title, author, description, book_pages, pdf_pages, status)
+               VALUES (?,?,?,?,?, 'draft')""",
+            (title, author, description, book_pages, pdf_pages),
         )
         return cur.lastrowid
 
 
-_TOPIC_COLUMNS = {
-    "pigiri": "topic_pigiri_id",
-    "boride": "topic_boride_id",
-    "gap": "topic_gap_id",
-}
+EDITABLE_BOOK_FIELDS = ("title", "author", "description", "book_pages", "pdf_pages")
 
 
-def set_book_topic(book_id: int, kind: str, group_chat_id: int, thread_id: int):
-    """kind یکی از 'pigiri' / 'boride' / 'gap'."""
-    column = _TOPIC_COLUMNS[kind]
+def update_book_field(book_id: int, field: str, value):
+    if field not in EDITABLE_BOOK_FIELDS:
+        raise ValueError(f"فیلد غیرمجاز: {field}")
+    with get_conn() as conn:
+        conn.execute(f"UPDATE books SET {field}=? WHERE id=?", (value, book_id))
+
+
+def delete_book(book_id: int):
+    """کتاب و تمام داده‌های وابسته به آن (روزها، ثبت‌نام‌ها، سوالات، پاسخ‌ها) را پاک می‌کند."""
     with get_conn() as conn:
         conn.execute(
-            f"UPDATE books SET group_chat_id=?, {column}=? WHERE id=?",
+            """DELETE FROM answers WHERE question_id IN
+               (SELECT id FROM questions WHERE book_id=?)""",
+            (book_id,),
+        )
+        conn.execute("DELETE FROM questions WHERE book_id=?", (book_id,))
+        conn.execute(
+            """DELETE FROM daily_progress WHERE reading_day_id IN
+               (SELECT id FROM reading_days WHERE book_id=?)""",
+            (book_id,),
+        )
+        conn.execute("DELETE FROM reading_days WHERE book_id=?", (book_id,))
+        conn.execute("DELETE FROM registrations WHERE book_id=?", (book_id,))
+        conn.execute("DELETE FROM books WHERE id=?", (book_id,))
+
+
+def set_book_topic(book_id: int, group_chat_id: int, thread_id: Optional[int]):
+    """تاپیک «پیگیری» کتاب را ثبت می‌کند (تنها تاپیک موردنیاز ربات)."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE books SET group_chat_id=?, topic_pigiri_id=? WHERE id=?",
             (group_chat_id, thread_id, book_id),
         )
 
@@ -210,6 +242,27 @@ def get_reading_day(reading_day_id: int) -> Optional[sqlite3.Row]:
         return conn.execute(
             "SELECT * FROM reading_days WHERE id=?", (reading_day_id,)
         ).fetchone()
+
+
+def replace_reading_days(book_id: int, days: List[Dict[str, Any]]):
+    """برنامه قبلی کتاب را پاک و برنامه جدید را جایگزین می‌کند."""
+    with get_conn() as conn:
+        conn.execute(
+            """DELETE FROM daily_progress WHERE reading_day_id IN
+               (SELECT id FROM reading_days WHERE book_id=?)""",
+            (book_id,),
+        )
+        conn.execute("DELETE FROM reading_days WHERE book_id=?", (book_id,))
+        for idx, d in enumerate(days, start=1):
+            conn.execute(
+                """INSERT INTO reading_days
+                   (book_id, day_index, jalali_date, gregorian_date,
+                    book_page_from, book_page_to, pdf_page_from, pdf_page_to)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (book_id, idx, d["jalali_date"], d["gregorian_date"],
+                 d["book_page_from"], d["book_page_to"],
+                 d["pdf_page_from"], d["pdf_page_to"]),
+            )
 
 
 def get_reading_days_by_gregorian_date(gdate: str) -> List[sqlite3.Row]:

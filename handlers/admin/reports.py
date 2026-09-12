@@ -3,20 +3,23 @@ from telegram import Update
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
-    CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
-    filters,
 )
 
 import database as db
-from utils.keyboards import books_kb, reading_days_kb, questions_kb
+from utils.keyboards import (
+    books_kb,
+    reading_days_kb,
+    questions_kb,
+    BTN_DAY_REPORT,
+    BTN_QUESTION_REPORT,
+    BTN_LIST_BOOKS,
+)
 from utils.jalali import parse_jalali, format_jalali_human
 from utils.formatting import format_day_report, format_question_report
-from handlers.common import is_admin
-
-CHOOSE_BOOK_DAY, CHOOSE_DAY = range(2)
-CHOOSE_BOOK_Q, CHOOSE_QUESTION = range(2, 4)
+from handlers.common import is_admin, end_and_show_menu, button_filter
+from handlers.states import S
 
 STATUS_LABELS = {"draft": "پیش‌نویس", "active": "فعال", "finished": "پایان‌یافته"}
 
@@ -25,15 +28,18 @@ STATUS_LABELS = {"draft": "پیش‌نویس", "active": "فعال", "finished":
 
 async def list_books_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
-        return
+        return ConversationHandler.END
+    context.user_data.clear()
     books = db.list_books()
     if not books:
-        await update.message.reply_text("هنوز کتابی ثبت نشده.")
-        return
+        return await end_and_show_menu(update, context, "هنوز کتابی ثبت نشده.")
     lines = ["📚 لیست کتاب‌ها:\n"]
     for b in books:
-        lines.append(f"#{b['id']} - {b['title']} ({STATUS_LABELS.get(b['status'], b['status'])})")
-    await update.message.reply_text("\n".join(lines))
+        pages = f"{b['book_pages'] or '—'} صفحه کتاب / {b['pdf_pages'] or '—'} صفحه پی‌دی‌اف"
+        lines.append(
+            f"#{b['id']} - {b['title']} ({STATUS_LABELS.get(b['status'], b['status'])})\n   {pages}"
+        )
+    return await end_and_show_menu(update, context, "\n".join(lines))
 
 
 # --------------------------------------------------------------- گزارش روز --
@@ -41,12 +47,14 @@ async def list_books_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def day_report_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return ConversationHandler.END
+    context.user_data.clear()
     books = db.list_books(status="active")
     if not books:
-        await update.message.reply_text("کتاب فعالی وجود نداره.")
-        return ConversationHandler.END
-    await update.message.reply_text("گزارش کدوم کتاب رو می‌خوای؟", reply_markup=books_kb(books, "rep_book"))
-    return CHOOSE_BOOK_DAY
+        return await end_and_show_menu(update, context, "کتاب فعالی وجود نداره.")
+    await update.message.reply_text(
+        "گزارش کدوم کتاب رو می‌خوای؟", reply_markup=books_kb(books, "rep_book")
+    )
+    return S.DAYREP_CHOOSE_BOOK
 
 
 async def day_report_choose_book(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -58,7 +66,7 @@ async def day_report_choose_book(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text("این کتاب برنامه‌ای نداره.")
         return ConversationHandler.END
     await query.edit_message_text("گزارش کدوم روز؟", reply_markup=reading_days_kb(days, "rep_day"))
-    return CHOOSE_DAY
+    return S.DAYREP_CHOOSE_DAY
 
 
 async def day_report_choose_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -68,19 +76,8 @@ async def day_report_choose_day(update: Update, context: ContextTypes.DEFAULT_TY
     rday = db.get_reading_day(reading_day_id)
     rows = db.get_progress_for_day(reading_day_id)
     jd = parse_jalali(rday["jalali_date"])
-    text = format_day_report(format_jalali_human(jd), rows)
-    await query.edit_message_text(text)
+    await query.edit_message_text(format_day_report(format_jalali_human(jd), rows))
     return ConversationHandler.END
-
-
-day_report_conv_handler = ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^📊 گزارش روز$"), day_report_start)],
-    states={
-        CHOOSE_BOOK_DAY: [CallbackQueryHandler(day_report_choose_book, pattern="^rep_book:")],
-        CHOOSE_DAY: [CallbackQueryHandler(day_report_choose_day, pattern="^rep_day:")],
-    },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-)
 
 
 # ----------------------------------------------------------- گزارش سوالات --
@@ -88,15 +85,14 @@ day_report_conv_handler = ConversationHandler(
 async def question_report_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return ConversationHandler.END
-    books = db.list_books()
-    books_with_q = [b for b in books if db.get_questions(b["id"])]
+    context.user_data.clear()
+    books_with_q = [b for b in db.list_books() if db.get_questions(b["id"])]
     if not books_with_q:
-        await update.message.reply_text("هیچ کتابی سوال ثبت‌شده نداره.")
-        return ConversationHandler.END
+        return await end_and_show_menu(update, context, "هیچ کتابی سوال ثبت‌شده نداره.")
     await update.message.reply_text(
         "گزارش سوالات کدوم کتاب؟", reply_markup=books_kb(books_with_q, "qrep_book")
     )
-    return CHOOSE_BOOK_Q
+    return S.QREP_CHOOSE_BOOK
 
 
 async def question_report_choose_book(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -105,7 +101,7 @@ async def question_report_choose_book(update: Update, context: ContextTypes.DEFA
     book_id = int(query.data.split(":")[1])
     questions = db.get_questions(book_id)
     await query.edit_message_text("کدوم سوال؟", reply_markup=questions_kb(questions, "qrep_q"))
-    return CHOOSE_QUESTION
+    return S.QREP_CHOOSE_QUESTION
 
 
 async def question_report_choose_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -131,13 +127,17 @@ async def question_report_choose_question(update: Update, context: ContextTypes.
     return ConversationHandler.END
 
 
-question_report_conv_handler = ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^📋 گزارش سوالات$"), question_report_start)],
-    states={
-        CHOOSE_BOOK_Q: [CallbackQueryHandler(question_report_choose_book, pattern="^qrep_book:")],
-        CHOOSE_QUESTION: [
-            CallbackQueryHandler(question_report_choose_question, pattern="^qrep_q:")
-        ],
-    },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-)
+ENTRY_POINTS = [
+    MessageHandler(button_filter(BTN_DAY_REPORT), day_report_start),
+    MessageHandler(button_filter(BTN_QUESTION_REPORT), question_report_start),
+    MessageHandler(button_filter(BTN_LIST_BOOKS), list_books_handler),
+]
+
+STATES = {
+    S.DAYREP_CHOOSE_BOOK: [CallbackQueryHandler(day_report_choose_book, pattern="^rep_book:")],
+    S.DAYREP_CHOOSE_DAY: [CallbackQueryHandler(day_report_choose_day, pattern="^rep_day:")],
+    S.QREP_CHOOSE_BOOK: [CallbackQueryHandler(question_report_choose_book, pattern="^qrep_book:")],
+    S.QREP_CHOOSE_QUESTION: [
+        CallbackQueryHandler(question_report_choose_question, pattern="^qrep_q:")
+    ],
+}
