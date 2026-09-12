@@ -86,6 +86,16 @@ CREATE TABLE IF NOT EXISTS answers (
     FOREIGN KEY(question_id) REFERENCES questions(id),
     FOREIGN KEY(user_id) REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS answer_submissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    submitted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(book_id, user_id),
+    FOREIGN KEY(book_id) REFERENCES books(id),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+);
 """
 
 
@@ -193,6 +203,7 @@ def delete_book(book_id: int):
         )
         conn.execute("DELETE FROM reading_days WHERE book_id=?", (book_id,))
         conn.execute("DELETE FROM registrations WHERE book_id=?", (book_id,))
+        conn.execute("DELETE FROM answer_submissions WHERE book_id=?", (book_id,))
         conn.execute("DELETE FROM books WHERE id=?", (book_id,))
 
 
@@ -571,7 +582,23 @@ def delete_question(question_id: int):
 # ----------------------------------------------------------------- answers -
 
 def save_answer(question_id: int, user_id: int, text: str):
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("متن پاسخ نمی‌تواند خالی باشد.")
+
     with get_conn() as conn:
+        # اگر کاربر قبلاً پاسخ‌های این کتاب را ثبت نهایی کرده باشد، اجازه ویرایش نیست.
+        q = conn.execute(
+            "SELECT book_id FROM questions WHERE id=?", (question_id,)
+        ).fetchone()
+        if q:
+            submitted = conn.execute(
+                "SELECT 1 FROM answer_submissions WHERE user_id=? AND book_id=?",
+                (user_id, q["book_id"]),
+            ).fetchone()
+            if submitted:
+                raise ValueError("پاسخ‌ها قبلاً ثبت نهایی شده‌اند و قابل ویرایش نیستند.")
+
         conn.execute(
             """INSERT INTO answers (question_id, user_id, text)
                VALUES (?,?,?)
@@ -601,3 +628,48 @@ def get_answers_for_question(question_id: int) -> List[sqlite3.Row]:
                ORDER BY a.answered_at""",
             (question_id,),
         ).fetchall()
+
+
+def get_user_answers_for_book(user_id: int, book_id: int) -> List[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT a.* FROM answers a
+               JOIN questions q ON q.id = a.question_id
+               WHERE q.book_id=? AND a.user_id=?
+               ORDER BY q.order_index""",
+            (book_id, user_id),
+        ).fetchall()
+
+
+def get_user_answer_for_question(
+    user_id: int, question_id: int
+) -> Optional[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM answers WHERE user_id=? AND question_id=?",
+            (user_id, question_id),
+        ).fetchone()
+
+
+# -------------------------------------------------------- answer submission --
+
+def submit_answers(user_id: int, book_id: int) -> bool:
+    """پاسخ‌های کاربر را برای یک کتاب ثبت نهایی می‌کند (فقط یک‌بار)."""
+    with get_conn() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO answer_submissions (user_id, book_id) VALUES (?,?)",
+                (user_id, book_id),
+            )
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+
+def is_answers_submitted(user_id: int, book_id: int) -> bool:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM answer_submissions WHERE user_id=? AND book_id=?",
+            (user_id, book_id),
+        ).fetchone()
+        return row is not None

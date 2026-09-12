@@ -62,4 +62,5 @@ class S(IntEnum):
 
     # پاسخ کاربر به سوالات
     ANS_CHOOSE_BOOK = auto()
-    ANS_ANSWERING = auto()
+    ANS_MANAGE_LIST = auto()
+    ANS_EDIT_TEXT = auto()

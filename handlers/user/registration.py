@@ -19,7 +19,9 @@ async def registration_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data.clear()
     books = db.list_books(status="active")
     if not books:
-        return await end_and_show_menu(update, context, "در حال حاضر کتاب فعالی برای ثبت‌نام نیست.")
+        return await end_and_show_menu(
+            update, context, "در حال حاضر کتاب فعالی برای ثبت‌نام نیست."
+        )
     await update.message.reply_text(
         "توی کدوم کتاب می‌خوای ثبت‌نام کنی؟", reply_markup=books_kb(books, "reg")
     )
@@ -36,7 +38,9 @@ async def registration_choose(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
 
     if book["status"] != "active":
-        await query.edit_message_text("این کتاب دیگر فعال نیست و ثبت‌نام در آن ممکن نیست.")
+        await query.edit_message_text(
+            "این کتاب دیگر فعال نیست و ثبت‌نام در آن ممکن نیست."
+        )
         return ConversationHandler.END
 
     tg_user = update.effective_user
@@ -45,9 +49,28 @@ async def registration_choose(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     created = db.register_user_to_book(book_id, user_row["id"])
     if created:
-        await query.edit_message_text(f"✅ توی کتاب «{book['title']}» ثبت‌نام شدی. موفق باشی 📖")
+        await query.edit_message_text(
+            f"✅ توی کتاب «{book['title']}» ثبت‌نام شدی. موفق باشی 📖"
+        )
+
+        # اعلان در تاپیک «پیگیری» همان کتاب
+        if book["group_chat_id"]:
+            full_name = tg_user.full_name or "کاربر"
+            try:
+                await context.bot.send_message(
+                    chat_id=book["group_chat_id"],
+                    message_thread_id=book["topic_pigiri_id"],
+                    text=(
+                        f"🎉 کاربر {full_name} به همخوانی «{book['title']}» اضافه شد. "
+                        "باریکلا :)"
+                    ),
+                )
+            except Exception:
+                pass
     else:
-        await query.edit_message_text(f"قبلاً توی کتاب «{book['title']}» ثبت‌نام کرده بودی.")
+        await query.edit_message_text(
+            f"قبلاً توی کتاب «{book['title']}» ثبت‌نام کرده بودی."
+        )
     return ConversationHandler.END
 
 
@@ -56,7 +79,9 @@ async def my_books_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_row = db.get_user_by_telegram_id(update.effective_user.id)
     books = db.get_user_books(user_row["id"]) if user_row else []
     if not books:
-        return await end_and_show_menu(update, context, "هنوز توی هیچ کتابی ثبت‌نام نکردی.")
+        return await end_and_show_menu(
+            update, context, "هنوز توی هیچ کتابی ثبت‌نام نکردی."
+        )
     lines = ["📖 کتاب‌های تو:\n"]
     for b in books:
         lines.append(f"- {b['title']} ({STATUS_LABELS.get(b['status'], b['status'])})")

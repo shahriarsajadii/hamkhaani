@@ -1,6 +1,14 @@
 import logging
+
+from telegram import BotCommandScopeAllGroupChats
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+)
 
 import database as db
 from config import BOT_TOKEN
@@ -25,16 +33,31 @@ async def group_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return
 
 
+async def post_init(application: Application):
+    """
+    در گروه‌ها منوی دستورات پایین صفحه را خالی می‌کنیم تا کاربران
+    دکمه‌ی کامندها را نبینند. (فقط در پیوی دستورات نمایش داده می‌شوند.)
+    """
+    try:
+        await application.bot.set_my_commands(
+            [], scope=BotCommandScopeAllGroupChats()
+        )
+    except Exception as e:
+        logger.warning("تنظیم منوی دستورات گروه با خطا مواجه شد: %s", e)
+
+
 def main():
     db.init_db()
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(post_init)
+        .build()
+    )
 
     # فیلتر پیام‌های گروهی: همه‌چیز رو بلوک کن به‌جز /settopic
-    group_filter = (
-        filters.ChatType.GROUPS
-        & ~filters.Regex(r"^/settopic")
-    )
+    group_filter = filters.ChatType.GROUPS & ~filters.Regex(r"^/settopic")
     # این هندلر باید اول از همه اضافه بشه تا اولویت داشته باشه
     application.add_handler(
         MessageHandler(group_filter, group_guard),
@@ -53,9 +76,11 @@ def main():
     application.add_handler(tracking_callback_handler)
 
     # فال‌بک برای پیام‌های ناشناخته (آخر از همه)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_message))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_message)
+    )
 
-    # جاب روزانه یادآوری
+    # جاب‌های روزانه/شبانهhttps://t.me/hamkhaanibot
     setup_jobs(application)
 
     logger.info("ربات در حال اجراست...")

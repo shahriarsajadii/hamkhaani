@@ -2,6 +2,7 @@
 """
 تولید متن‌های نهایی برای اعلان برنامه همخوانی، گزارش‌ها و ... .
 """
+import datetime
 from typing import List
 import sqlite3
 
@@ -14,6 +15,61 @@ def format_schedule_days(days: List[dict]) -> str:
         lines.append(f"💻 پی دی اف : {d['pdf_page_from']} تا {d['pdf_page_to']}")
         lines.append("")
     return "\n".join(lines).strip()
+
+
+def format_nightly_schedule(book: sqlite3.Row, days: List[dict]) -> str:
+    """
+    برنامه‌ی شبانه‌ای که هر شب ساعت ۱۲ در تاپیک پیگیری پست می‌شود.
+    روزهای قبل از امروز با ✅ علامت‌گذاری می‌شوند.
+    days باید خروجی days_with_human باشند (کلید jalali_date_human و gregorian_date).
+    """
+    today_g = str(datetime.date.today())
+    lines = [f"📖 «{book['title']}»", ""]
+    for d in days:
+        is_past = d["gregorian_date"] < today_g
+        date_line = f"🗓 {d['jalali_date_human']}"
+        if is_past:
+            date_line += " ✅"
+        lines.append(date_line)
+        lines.append(f"📚 کتاب: صفحه {d['book_page_from']} تا {d['book_page_to']}")
+        lines.append(f"💻 پی دی اف : {d['pdf_page_from']} تا {d['pdf_page_to']}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def format_previous_day_report(jalali_date_human: str, rows) -> str:
+    """
+    گزارش روز قبل:
+      - تعداد کل اعضای همخوانی
+      - تعداد و لیست کسانی که گزارش داده‌اند
+      - تعداد و لیست کسانی که گزارش نداده‌اند
+    """
+    read_users, not_read_users = [], []
+    for r in rows:
+        name = (
+            r["full_name"]
+            or (f"@{r['username']}" if r["username"] else str(r["telegram_id"]))
+        )
+        if r["status"] == "read":
+            read_users.append(name)
+        else:
+            not_read_users.append(name)
+
+    lines = [f"📊 گزارش روز {jalali_date_human}", ""]
+    lines.append(f"👥 تعداد اعضای همخوانی: {len(rows)}")
+    lines.append("")
+    lines.append(f"✅ تعداد گزارش‌داده: {len(read_users)}")
+    for n in read_users:
+        lines.append(f"   - {n}")
+    if not read_users:
+        lines.append("   (هیچ‌کس)")
+    lines.append("")
+    lines.append(f"❌ تعداد گزارش‌نداده: {len(not_read_users)}")
+    for n in not_read_users:
+        lines.append(f"   - {n}")
+    if not not_read_users:
+        lines.append("   (هیچ‌کس)")
+    return "\n".join(lines)
 
 
 def format_book_info(book: sqlite3.Row) -> str:
@@ -47,7 +103,9 @@ def format_schedule_announcement(book: sqlite3.Row, days: List[dict]) -> str:
     return "\n".join(lines)
 
 
-def format_daily_report_line(full_name: str, user_identifier: str, jalali_date_human: str, read: bool) -> str:
+def format_daily_report_line(
+    full_name: str, user_identifier: str, jalali_date_human: str, read: bool
+) -> str:
     mark = "✅" if read else "❌"
     verb = "این بخش رو خوند" if read else "هنوز این بخش رو نخونده"
     return f"{jalali_date_human} - {full_name} | {user_identifier} {verb}.{mark}"
@@ -61,7 +119,10 @@ def format_day_report(jalali_date_human: str, rows: List[sqlite3.Row]) -> str:
     """
     read_list, not_read_list = [], []
     for r in rows:
-        name = r["full_name"] or (f"@{r['username']}" if r["username"] else str(r["telegram_id"]))
+        name = (
+            r["full_name"]
+            or (f"@{r['username']}" if r["username"] else str(r["telegram_id"]))
+        )
         if r["status"] == "read":
             read_list.append(name)
         else:
