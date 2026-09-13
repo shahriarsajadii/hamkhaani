@@ -2,7 +2,7 @@
 <project version="4">
   <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
     <data-source source="LOCAL" name="readalong" uuid="eec99c7c-8dcb-4169-933b-b38d2dd3d44f">
-      <driver-ref>sqlite.xerial</driver-ref>
+      <driver-ref>cda3ffba-6597-4635-bf3f-a115a26ed01a</driver-ref>
       <synchronize>true</synchronize>
       <jdbc-driver>org.sqlite.JDBC</jdbc-driver>
       <jdbc-url>jdbc:sqlite:D:\Projects\hamkhaani\readalong.db</jdbc-url>

@@ -4,6 +4,7 @@ from telegram import BotCommandScopeAllGroupChats
 from telegram import Update
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
     filters,
@@ -30,6 +31,17 @@ async def group_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     هر پیام یا دستور دیگری از کاربران (حتی ادمین) نادیده گرفته می‌شود.
     """
     # این هندلر هیچ پاسخی نمی‌دهد - فقط آپدیت را می‌بلعد
+    return
+
+
+async def group_callback_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    در گروه‌ها هیچ callback query ای نباید پاسخ داده شود.
+    اگر کسی روی inline button در گروه کلیک کند، ربات ساکت می‌ماند.
+    """
+    query = update.callback_query
+    if query and update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
+        await query.answer()  # تلگرام رو از حالت loading در بیاره بدون هیچ پیامی
     return
 
 
@@ -63,6 +75,11 @@ def main():
         MessageHandler(group_filter, group_guard),
         group=-1,  # group=-1 یعنی قبل از همه هندلرها بررسی می‌شه
     )
+    # بلوک کردن همه‌ی callback query ها در گروه‌ها
+    application.add_handler(
+        CallbackQueryHandler(group_callback_guard, pattern=".*", block=True),
+        group=-1,
+    )
 
     # گفتگوی واحد ربات (فقط در پیوی کار می‌کند)
     application.add_handler(build_conversation())
@@ -75,9 +92,9 @@ def main():
     # پاسخ «خواندم» از یادآوری روزانه یا دکمه inline
     application.add_handler(tracking_callback_handler)
 
-    # فال‌بک برای پیام‌های ناشناخته (آخر از همه)
+    # فال‌بک برای پیام‌های ناشناخته - فقط در پیوی (private)
     application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_message)
+        MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, unknown_message)
     )
 
     # جاب‌های روزانه/شبانهhttps://t.me/hamkhaanibot
