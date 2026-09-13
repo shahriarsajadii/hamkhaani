@@ -55,10 +55,9 @@ async def members_choose_book(update: Update, context: ContextTypes.DEFAULT_TYPE
         username = f"@{m['username']}" if m["username"] else f"ID:{m['telegram_id']}"
         read = m["read_days"]
         if total_days > 0:
-            lines.append(f"{i} - {name} {username} | {read} از {total_days} روز خوانده")
+            lines.append(f"کاربر {i} - {name} {username} | {read} از {total_days} روز خوانده")
         else:
-            lines.append(f"{i} - {name} {username} | {read} روز خوانده")
-
+            lines.append(f"کاربر {i} - {name} {username} | {read} روز خوانده")
     await query.edit_message_text("\n".join(lines))
     return ConversationHandler.END
 
