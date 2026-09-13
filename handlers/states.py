@@ -64,3 +64,6 @@ class S(IntEnum):
     ANS_CHOOSE_BOOK = auto()
     ANS_MANAGE_LIST = auto()
     ANS_EDIT_TEXT = auto()
+
+    # لیست اعضا
+    MEMBERS_CHOOSE_BOOK = auto()

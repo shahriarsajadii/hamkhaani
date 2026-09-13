@@ -12,7 +12,7 @@ from telegram.ext import (
 )
 
 import database as db
-from config import BOT_TOKEN
+from config import BOT_TOKEN, BOT_NAME, BOT_DESCRIPTION, BOT_SHORT_DESCRIPTION
 from handlers.common import start, cancel, unknown_message
 from handlers.admin.book import set_topic_command
 from handlers.router import build_conversation
@@ -30,7 +30,6 @@ async def group_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     در گروه‌ها فقط /settopic مجاز است.
     هر پیام یا دستور دیگری از کاربران (حتی ادمین) نادیده گرفته می‌شود.
     """
-    # این هندلر هیچ پاسخی نمی‌دهد - فقط آپدیت را می‌بلعد
     return
 
 
@@ -41,14 +40,14 @@ async def group_callback_guard(update: Update, context: ContextTypes.DEFAULT_TYP
     """
     query = update.callback_query
     if query and update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
-        await query.answer()  # تلگرام رو از حالت loading در بیاره بدون هیچ پیامی
+        await query.answer()
     return
 
 
 async def post_init(application: Application):
     """
-    در گروه‌ها منوی دستورات پایین صفحه را خالی می‌کنیم تا کاربران
-    دکمه‌ی کامندها را نبینند. (فقط در پیوی دستورات نمایش داده می‌شوند.)
+    - در گروه‌ها منوی دستورات را خالی می‌کنیم.
+    - نام و دیسکریپشن ربات را از env ست می‌کنیم (اگر تعریف شده باشند).
     """
     try:
         await application.bot.set_my_commands(
@@ -56,6 +55,27 @@ async def post_init(application: Application):
         )
     except Exception as e:
         logger.warning("تنظیم منوی دستورات گروه با خطا مواجه شد: %s", e)
+
+    if BOT_NAME:
+        try:
+            await application.bot.set_my_name(BOT_NAME)
+            logger.info("نام ربات به «%s» تغییر کرد.", BOT_NAME)
+        except Exception as e:
+            logger.warning("تنظیم نام ربات با خطا مواجه شد: %s", e)
+
+    if BOT_DESCRIPTION:
+        try:
+            await application.bot.set_my_description(BOT_DESCRIPTION)
+            logger.info("دیسکریپشن ربات ست شد.")
+        except Exception as e:
+            logger.warning("تنظیم دیسکریپشن ربات با خطا مواجه شد: %s", e)
+
+    if BOT_SHORT_DESCRIPTION:
+        try:
+            await application.bot.set_my_short_description(BOT_SHORT_DESCRIPTION)
+            logger.info("توضیح کوتاه ربات ست شد.")
+        except Exception as e:
+            logger.warning("تنظیم توضیح کوتاه ربات با خطا مواجه شد: %s", e)
 
 
 def main():
@@ -70,10 +90,9 @@ def main():
 
     # فیلتر پیام‌های گروهی: همه‌چیز رو بلوک کن به‌جز /settopic
     group_filter = filters.ChatType.GROUPS & ~filters.Regex(r"^/settopic")
-    # این هندلر باید اول از همه اضافه بشه تا اولویت داشته باشه
     application.add_handler(
         MessageHandler(group_filter, group_guard),
-        group=-1,  # group=-1 یعنی قبل از همه هندلرها بررسی می‌شه
+        group=-1,
     )
     # بلوک کردن همه‌ی callback query ها در گروه‌ها
     application.add_handler(
@@ -97,7 +116,6 @@ def main():
         MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, unknown_message)
     )
 
-    # جاب‌های روزانه/شبانهhttps://t.me/hamkhaanibot
     setup_jobs(application)
 
     logger.info("ربات در حال اجراست...")

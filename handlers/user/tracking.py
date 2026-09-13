@@ -1,12 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-گزارش مطالعه کاربر - نسخه اصلاح‌شده:
+گزارش مطالعه کاربر:
 
-تغییرات:
-- روزهای آینده هم قابل ثبت هستند
-- گزارش «خواندم» درست ثبت می‌شود
-- دکمه برگشت در مراحل مختلف اضافه شد
-- فقط دو وضعیت: خوانده / نخوانده (pending = نخوانده)
+- کاربر نمی‌تواند روز N را گزارش دهد مگر آنکه روز N-1 را قبلاً گزارش داده باشد.
+- وقتی کاربر آخرین روز کتاب را گزارش می‌دهد، پیام «کتاب را تمام کردی» در گروه ارسال می‌شود.
 """
 
 import datetime
@@ -195,6 +192,18 @@ async def report_choose_day(
         await query.edit_message_text("توی این کتاب ثبت‌نام نکردی.")
         return ConversationHandler.END
 
+    # بررسی ترتیب: کاربر نمی‌تواند روز N را بدون گزارش روز N-1 ثبت کند
+    current_day_index = rday["day_index"]
+    if not db.is_previous_day_reported(book_id, user_row["id"], current_day_index):
+        prev_index = current_day_index - 1
+        await query.edit_message_text(
+            f"⚠️ برای ثبت گزارش روز {current_day_index}، ابتدا باید گزارش روز {prev_index} را ثبت کنی.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("↩️ برگشت به لیست روزها", callback_data=f"report_book:{book_id}")
+            ]])
+        )
+        return S.REPORT_CHOOSE_DAY
+
     existing = db.get_progress_for_user(reading_day_id, user_row["id"])
 
     if existing and existing["status"] == "read":
@@ -325,6 +334,16 @@ async def tracking_callback(
         await query.edit_message_text("شما در این کتاب ثبت‌نام نکرده‌اید.")
         return
 
+    # بررسی ترتیب روزها از یادآور روزانه
+    current_day_index = rday["day_index"]
+    if not db.is_previous_day_reported(book["id"], user_row["id"], current_day_index):
+        prev_index = current_day_index - 1
+        await query.edit_message_text(
+            f"⚠️ برای ثبت گزارش روز {current_day_index}، ابتدا باید گزارش روز {prev_index} را ثبت کنی.\n"
+            "از ربات (ثبت گزارش مطالعه) اقدام کن."
+        )
+        return
+
     # بررسی اینکه قبلاً «خواندم» ثبت شده باشد
     existing = db.get_progress_for_user(reading_day_id, user_row["id"])
 
@@ -341,7 +360,6 @@ async def tracking_callback(
     human_date = format_jalali_human(jd)
 
     if not created:
-        # اگر set_progress موفق نشد، وضعیت فعلی را دوباره بررسی می‌کنیم
         existing = db.get_progress_for_user(reading_day_id, user_row["id"])
         if existing and existing["status"] == "read":
             await query.edit_message_text(
@@ -370,6 +388,27 @@ async def tracking_callback(
             )
         except Exception:
             pass
+
+        # بررسی اینکه آیا کاربر همه روزها را تمام کرد
+        all_days = db.get_reading_days(book["id"])
+        total_days = len(all_days)
+        if total_days > 0 and rday["day_index"] == total_days:
+            # آخرین روز کتاب — بررسی که واقعاً همه روزها «خوانده» شده‌اند
+            progress = db.get_user_book_progress(user_row["id"], book["id"])
+            all_read = all(row["status"] == "read" for row in progress)
+            if all_read:
+                try:
+                    await context.bot.send_message(
+                        chat_id=book["group_chat_id"],
+                        message_thread_id=book["topic_pigiri_id"],
+                        text=(
+                            f"🎉 {full_name} | {_user_identifier(user_row)} "
+                            f"کتاب «{book['title']}» رو به پایان رساند! 🏁📖\n"
+                            "آفرین، مبارک باشه! 🌟"
+                        ),
+                    )
+                except Exception:
+                    pass
 
 
 tracking_callback_handler = CallbackQueryHandler(

@@ -673,3 +673,60 @@ def is_answers_submitted(user_id: int, book_id: int) -> bool:
             (user_id, book_id),
         ).fetchone()
         return row is not None
+
+# ------------------------------------------------- members progress list ---
+
+def get_book_members_progress(book_id: int) -> List[sqlite3.Row]:
+    """
+    لیست همه اعضای یک کتاب به همراه تعداد روزهایی که گزارش «خوندم» داده‌اند.
+    برای نمایش عمومی در هر دو پنل ادمین و کاربر استفاده می‌شود.
+    """
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT
+                   u.full_name,
+                   u.username,
+                   u.telegram_id,
+                   COUNT(dp.id) AS read_days
+               FROM registrations reg
+               JOIN users u ON u.id = reg.user_id
+               LEFT JOIN daily_progress dp
+                 ON dp.user_id = u.id
+                AND dp.status = 'read'
+                AND dp.reading_day_id IN (
+                    SELECT id FROM reading_days WHERE book_id = ?
+                )
+               WHERE reg.book_id = ?
+               GROUP BY u.id
+               ORDER BY read_days DESC, u.full_name""",
+            (book_id, book_id),
+        ).fetchall()
+
+
+def get_previous_reading_day_index(book_id: int, day_index: int) -> Optional[int]:
+    """ایندکس روز قبل از day_index را برمی‌گرداند، یا None اگر اول باشد."""
+    if day_index <= 1:
+        return None
+    return day_index - 1
+
+
+def is_previous_day_reported(book_id: int, user_id: int, day_index: int) -> bool:
+    """
+    بررسی می‌کند آیا کاربر روز قبل را گزارش داده یا نه.
+    اگر day_index == 1 باشد (اولین روز)، همیشه True برمی‌گرداند.
+    """
+    if day_index <= 1:
+        return True
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT dp.status
+               FROM reading_days rd
+               LEFT JOIN daily_progress dp
+                 ON dp.reading_day_id = rd.id
+                AND dp.user_id = ?
+               WHERE rd.book_id = ? AND rd.day_index = ?""",
+            (user_id, book_id, day_index - 1),
+        ).fetchone()
+        if row is None:
+            return False
+        return row["status"] == "read"
