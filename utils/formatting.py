@@ -180,15 +180,26 @@ def format_answers_report(book_title: str, report_data: list) -> str:
 
 
 def format_answer_submitted_notification(
-    book_title: str, user_full_name: str, username: str | None, question_count: int
+    book_title: str,
+    user_full_name: str,
+    username: str | None,
+    answered_count: int,
+    total_count: int,
 ) -> str:
     """
     پیامی که وقتی کاربر پاسخ‌هایش را ثبت نهایی کرد در گروه اعلام می‌شود.
+    شامل نام، آیدی و تعداد سوالات پاسخ‌داده‌شده از کل.
     """
     name_part = user_full_name or (f"@{username}" if username else "یک عضو")
-    username_part = f" (@{username})" if username else ""
+    username_part = f" | @{username}" if username else ""
+    count_part = (
+        f"{answered_count} از {total_count} سوال"
+        if answered_count < total_count
+        else f"همه {total_count} سوال"
+    )
     return (
-        f"📬 {name_part}{username_part} پاسخ {question_count} سوال کتاب «{book_title}» رو فرستاد! 🎉"
+        f"📬 {name_part}{username_part}\n"
+        f"به {count_part} کتاب «{book_title}» پاسخ داد! 🎉"
     )
 
 

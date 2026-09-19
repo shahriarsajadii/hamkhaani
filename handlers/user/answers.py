@@ -5,10 +5,12 @@
 - کاربر کتاب را انتخاب می‌کند.
 - لیست سوالات را با وضعیت پاسخ می‌بیند (پاسخ داده / پاسخ نداده).
 - روی هر سوال کلیک می‌کند، پاسخ خود را وارد یا ویرایش می‌کند.
-- وقتی همه سوالات پاسخ داده شد، دکمه «📤 ارسال نهایی پاسخ‌ها» ظاهر می‌شود.
+- وقتی حداقل یک سوال پاسخ داده شد، دکمه «📤 ارسال نهایی پاسخ‌ها» ظاهر می‌شود.
 - با زدن این دکمه، پاسخ‌ها ثبت نهایی می‌شوند و دیگر قابل ویرایش نیستند.
 - بعد از ارسال نهایی، کاربر می‌تواند سوالات و پاسخ‌های خودش را ببیند.
 """
+import logging
+
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -20,8 +22,6 @@ from telegram.ext import (
     MessageHandler,
     CallbackQueryHandler,
 )
-
-import logging
 
 import database as db
 from utils.keyboards import books_kb, BTN_ANSWER_QUESTIONS
@@ -59,7 +59,7 @@ def _answers_list_text(book, questions, answers_by_q, submitted: bool) -> str:
         lines.append("لیست سوالات و پاسخ‌های شما:")
     else:
         lines.append("روی هر سوال کلیک کن و پاسخ خودت رو وارد کن.")
-        lines.append("وقتی همه سوالات رو جواب دادی، دکمه «📤 ارسال نهایی پاسخ‌ها» رو بزن.")
+        lines.append("بعد از جواب دادن به حداقل یه سوال، می‌تونی ارسال نهایی کنی.")
     lines.append("")
 
     for q in questions:
@@ -89,17 +89,16 @@ def _answers_list_kb(questions, answers_by_q, submitted: bool) -> InlineKeyboard
             [InlineKeyboardButton(label, callback_data=f"ans_item:{q['id']}")]
         )
 
-    if not submitted:
-        all_answered = all(q["id"] in answers_by_q for q in questions)
-        if all_answered:
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        "📤 ارسال نهایی پاسخ‌ها",
-                        callback_data="ans_submit",
-                    )
-                ]
-            )
+    # دکمه ارسال نهایی: حداقل یک سوال جواب داده شده باشد کافی است
+    if not submitted and len(answers_by_q) >= 1:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "📤 ارسال نهایی پاسخ‌ها",
+                    callback_data="ans_submit",
+                )
+            ]
+        )
 
     return InlineKeyboardMarkup(rows)
 
@@ -194,11 +193,14 @@ async def answers_manage_list(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text("اطلاعات پیدا نشد.")
         return ConversationHandler.END
 
+    # FIX: sqlite3.Row does not support .get() — convert to dict
+    book = dict(book)
+
     data = query.data or ""
     questions = db.get_questions(book_id)
     submitted = db.is_answers_submitted(user_id, book_id)
 
-    # بازگشت به لیست (از داخل لیست یا از داخل حالت ویرایش)
+    # بازگشت به لیست
     if data == "ans_back":
         context.user_data.pop("ans_question_id", None)
         answers_by_q = _answers_by_question(user_id, book_id)
@@ -220,27 +222,33 @@ async def answers_manage_list(update: Update, context: ContextTypes.DEFAULT_TYPE
             return S.ANS_MANAGE_LIST
 
         answers_by_q = _answers_by_question(user_id, book_id)
-        if not all(q["id"] in answers_by_q for q in questions):
+
+        # حداقل یک سوال باید جواب داده شده باشد
+        if len(answers_by_q) == 0:
             await query.edit_message_text(
-                "⚠️ اول باید به همه سوالات پاسخ بدی.",
+                "⚠️ باید حداقل به یه سوال پاسخ بدی تا بتونی ارسال نهایی کنی.",
                 reply_markup=_answers_list_kb(questions, answers_by_q, False),
             )
             return S.ANS_MANAGE_LIST
 
         db.submit_answers(user_id, book_id)
 
-        # اعلام در گروه کتاب (اگر گروه داشت)
+        # اعلام در گروه کتاب
         tg_user = update.effective_user
-        if book.get("group_chat_id"):
+        group_chat_id = book.get("group_chat_id")
+        if group_chat_id:
             try:
+                answered_count = len(answers_by_q)
+                total_count = len(questions)
                 notification = format_answer_submitted_notification(
                     book["title"],
                     tg_user.full_name or tg_user.first_name,
                     tg_user.username,
-                    len(questions),
+                    answered_count,
+                    total_count,
                 )
                 await context.bot.send_message(
-                    chat_id=book["group_chat_id"],
+                    chat_id=group_chat_id,
                     message_thread_id=book.get("topic_pigiri_id"),
                     text=notification,
                 )
@@ -269,7 +277,7 @@ async def answers_manage_list(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         context.user_data["ans_question_id"] = question_id
 
-        # اگر پاسخ‌ها قبلاً نهایی شده، فقط نمایش بده + دکمه برگشت
+        # اگر پاسخ‌ها قبلاً نهایی شده، فقط نمایش بده
         if submitted:
             ans = db.get_user_answer_for_question(user_id, question_id)
             ans_text = ans["text"] if ans else "(بدون پاسخ)"
@@ -318,7 +326,6 @@ async def answers_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update, context, "پاسخ‌های شما قبلاً ثبت نهایی شده."
         )
 
-    # قبل از پذیرش پاسخ، دسترسی کاربر را دوباره چک می‌کنیم
     if not db.can_user_answer_book(user_id, book_id):
         return await end_and_show_menu(
             update, context, "فعلاً امکان پاسخ‌دادن به سوالات این کتاب وجود نداره."
@@ -337,7 +344,6 @@ async def answers_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(str(e), reply_markup=BACK_KB)
         return S.ANS_EDIT_TEXT
 
-    # پاک کردن سوال انتخاب‌شده و برگشت به لیست
     context.user_data.pop("ans_question_id", None)
 
     book = db.get_book(book_id)
@@ -370,7 +376,6 @@ STATES = {
     ],
     S.ANS_EDIT_TEXT: [
         MessageHandler(TEXT_INPUT, answers_receive),
-        # دکمه‌ی برگشت به لیست از داخل حالت ویرایش پاسخ
         CallbackQueryHandler(answers_manage_list, pattern=r"^ans_back$"),
     ],
 }
