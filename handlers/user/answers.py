@@ -21,10 +21,15 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 
+import logging
+
 import database as db
 from utils.keyboards import books_kb, BTN_ANSWER_QUESTIONS
+from utils.formatting import format_answer_submitted_notification
 from handlers.common import TEXT_INPUT, end_and_show_menu, button_filter
 from handlers.states import S
+
+logger = logging.getLogger(__name__)
 
 
 # دکمه‌ی بازگشت به لیست سوالات (در حالت پاسخ‌دهی/ویرایش)
@@ -223,6 +228,25 @@ async def answers_manage_list(update: Update, context: ContextTypes.DEFAULT_TYPE
             return S.ANS_MANAGE_LIST
 
         db.submit_answers(user_id, book_id)
+
+        # اعلام در گروه کتاب (اگر گروه داشت)
+        tg_user = update.effective_user
+        if book.get("group_chat_id"):
+            try:
+                notification = format_answer_submitted_notification(
+                    book["title"],
+                    tg_user.full_name or tg_user.first_name,
+                    tg_user.username,
+                    len(questions),
+                )
+                await context.bot.send_message(
+                    chat_id=book["group_chat_id"],
+                    message_thread_id=book.get("topic_pigiri_id"),
+                    text=notification,
+                )
+            except Exception as e:
+                logger.warning("خطا در اعلام گروه پس از ارسال پاسخ: %s", e)
+
         await query.edit_message_text(
             "🎉 پاسخ‌های شما با موفقیت ثبت نهایی شد. متشکریم!\n\n"
             + _answers_list_text(book, questions, answers_by_q, True),

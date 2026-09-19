@@ -67,3 +67,6 @@ class S(IntEnum):
 
     # لیست اعضا
     MEMBERS_CHOOSE_BOOK = auto()
+
+    # گزارش جواب افراد (ادمین)
+    ANSWERS_REPORT_CHOOSE_BOOK = auto()

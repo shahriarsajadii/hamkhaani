@@ -710,6 +710,52 @@ def get_previous_reading_day_index(book_id: int, day_index: int) -> Optional[int
     return day_index - 1
 
 
+def get_book_answers_report(book_id: int):
+    """
+    گزارش کامل پاسخ‌های اعضا برای یک کتاب:
+    - چه کسانی به کدام سوالات پاسخ داده‌اند
+    - چه کسانی هیچ سوالی پاسخ نداده‌اند (ثبت‌نام کرده ولی جواب صفر)
+    """
+    with get_conn() as conn:
+        questions = conn.execute(
+            "SELECT * FROM questions WHERE book_id=? ORDER BY order_index, id",
+            (book_id,),
+        ).fetchall()
+
+        members = conn.execute(
+            """SELECT u.* FROM users u
+               JOIN registrations r ON r.user_id = u.id
+               WHERE r.book_id=?
+               ORDER BY u.full_name""",
+            (book_id,),
+        ).fetchall()
+
+        result = []
+        for user in members:
+            user_answers = {}
+            for q in questions:
+                ans = conn.execute(
+                    "SELECT * FROM answers WHERE question_id=? AND user_id=?",
+                    (q["id"], user["id"]),
+                ).fetchone()
+                user_answers[q["id"]] = ans is not None
+
+            submitted = conn.execute(
+                "SELECT 1 FROM answer_submissions WHERE user_id=? AND book_id=?",
+                (user["id"], book_id),
+            ).fetchone()
+
+            result.append({
+                "user": user,
+                "questions": questions,
+                "answers": user_answers,
+                "submitted": submitted is not None,
+                "total_answered": sum(1 for v in user_answers.values() if v),
+            })
+
+        return result
+
+
 def is_previous_day_reported(book_id: int, user_id: int, day_index: int) -> bool:
     """
     بررسی می‌کند آیا کاربر روز قبل را گزارش داده یا نه.

@@ -1,4 +1,5 @@
 import logging
+import sys
 
 from telegram import BotCommandScopeAllGroupChats
 from telegram import Update
@@ -20,9 +21,16 @@ from handlers.user.tracking import tracking_callback_handler
 from scheduler import setup_jobs
 
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+    ],
 )
 logger = logging.getLogger(__name__)
+
+# کاهش لاگ‌های پر-سروصدای httpx
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 async def group_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -40,8 +48,18 @@ async def group_callback_guard(update: Update, context: ContextTypes.DEFAULT_TYP
     """
     query = update.callback_query
     if query and update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
-        await query.answer()
+        try:
+            await query.answer()
+        except Exception:
+            pass
     return
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """
+    هندلر مرکزی خطا — از کرش بات جلوگیری می‌کند و خطاها رو لاگ می‌کند.
+    """
+    logger.error("خطای ناگرفته‌شده:", exc_info=context.error)
 
 
 async def post_init(application: Application):
@@ -85,8 +103,16 @@ def main():
         Application.builder()
         .token(BOT_TOKEN)
         .post_init(post_init)
+        # تنظیمات شبکه برای استیبیلیتی بیشتر
+        .connect_timeout(30)
+        .read_timeout(30)
+        .write_timeout(30)
+        .pool_timeout(30)
         .build()
     )
+
+    # هندلر مرکزی خطا — مهم‌ترین بخش استیبیلیتی
+    application.add_error_handler(error_handler)
 
     # فیلتر پیام‌های گروهی: همه‌چیز رو بلوک کن به‌جز /settopic
     group_filter = filters.ChatType.GROUPS & ~filters.Regex(r"^/settopic")
@@ -119,7 +145,12 @@ def main():
     setup_jobs(application)
 
     logger.info("ربات در حال اجراست...")
-    application.run_polling(allowed_updates=["message", "callback_query"])
+    application.run_polling(
+        allowed_updates=["message", "callback_query"],
+        drop_pending_updates=True,
+        # در صورت قطع شدن اتصال، هر 5 ثانیه یک‌بار سعی کند
+        poll_interval=1.0,
+    )
 
 
 if __name__ == "__main__":

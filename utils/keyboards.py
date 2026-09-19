@@ -8,6 +8,7 @@ BTN_SCHEDULE = "📅 تعیین برنامه همخوانی"
 BTN_QUESTIONS = "❓ تعیین سوالات کتاب"
 BTN_DAY_REPORT = "📊 گزارش روز"
 BTN_QUESTION_REPORT = "📋 گزارش سوالات"
+BTN_ANSWERS_REPORT = "📝 گزارش جواب افراد"
 BTN_LIST_BOOKS = "📚 لیست کتاب‌ها"
 BTN_EDIT_BOOK = "✏️ ویرایش کتاب"
 BTN_DELETE_BOOK = "🗑 حذف کتاب"
@@ -27,6 +28,7 @@ ADMIN_BUTTONS = [
     BTN_QUESTIONS,
     BTN_DAY_REPORT,
     BTN_QUESTION_REPORT,
+    BTN_ANSWERS_REPORT,
     BTN_LIST_BOOKS,
     BTN_EDIT_BOOK,
     BTN_DELETE_BOOK,
@@ -50,10 +52,10 @@ ADMIN_MENU = ReplyKeyboardMarkup(
     [
         [BTN_NEW_BOOK, BTN_SCHEDULE],
         [BTN_QUESTIONS, BTN_DAY_REPORT],
-        [BTN_QUESTION_REPORT, BTN_LIST_BOOKS],
-        [BTN_EDIT_BOOK, BTN_DELETE_BOOK],
-        [BTN_ACTIVATE_BOOK, BTN_DEACTIVATE_BOOK],
-        [BTN_MEMBERS_LIST],
+        [BTN_QUESTION_REPORT, BTN_ANSWERS_REPORT],
+        [BTN_LIST_BOOKS, BTN_EDIT_BOOK],
+        [BTN_DELETE_BOOK, BTN_ACTIVATE_BOOK],
+        [BTN_DEACTIVATE_BOOK, BTN_MEMBERS_LIST],
     ],
     resize_keyboard=True,
 )

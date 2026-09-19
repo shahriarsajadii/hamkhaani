@@ -137,6 +137,61 @@ def format_day_report(jalali_date_human: str, rows: List[sqlite3.Row]) -> str:
     return "\n".join(lines)
 
 
+def format_answers_report(book_title: str, report_data: list) -> str:
+    """
+    گزارش کامل جواب افراد به سوالات یک کتاب:
+    - به ازای هر نفر نشان می‌دهد به کدام سوالات پاسخ داده
+    - در انتها لیست کسانی که هیچ پاسخی نداده‌اند
+    """
+    lines = [f"📝 گزارش جواب افراد — «{book_title}»", ""]
+
+    no_answer_users = []
+
+    for item in report_data:
+        user = item["user"]
+        name = user["full_name"] or (f"@{user['username']}" if user["username"] else str(user["telegram_id"]))
+        username_part = f" | @{user['username']}" if user["username"] else ""
+
+        total = len(item["questions"])
+        answered = item["total_answered"]
+
+        if answered == 0:
+            no_answer_users.append(name + username_part)
+            continue
+
+        submitted_mark = " ✅ (ارسال نهایی)" if item["submitted"] else ""
+        lines.append(f"👤 {name}{username_part}{submitted_mark}")
+        lines.append(f"   پاسخ‌داده: {answered} از {total} سوال")
+
+        for q in item["questions"]:
+            has_ans = item["answers"].get(q["id"], False)
+            mark = "✅ جواب داده" if has_ans else "❌ جواب نداده"
+            lines.append(f"   سوال {q['order_index']}: {mark}")
+
+        lines.append("")
+
+    if no_answer_users:
+        lines.append("─" * 30)
+        lines.append(f"🚫 شرکت‌کرده‌ولی‌جواب‌نداده ({len(no_answer_users)} نفر):")
+        for n in no_answer_users:
+            lines.append(f"   - {n}")
+
+    return "\n".join(lines)
+
+
+def format_answer_submitted_notification(
+    book_title: str, user_full_name: str, username: str | None, question_count: int
+) -> str:
+    """
+    پیامی که وقتی کاربر پاسخ‌هایش را ثبت نهایی کرد در گروه اعلام می‌شود.
+    """
+    name_part = user_full_name or (f"@{username}" if username else "یک عضو")
+    username_part = f" (@{username})" if username else ""
+    return (
+        f"📬 {name_part}{username_part} پاسخ {question_count} سوال کتاب «{book_title}» رو فرستاد! 🎉"
+    )
+
+
 def format_question_report(question_text: str, answers: List[sqlite3.Row]) -> str:
     lines = [f"❓ {question_text}", ""]
     for i, a in enumerate(answers, start=1):
