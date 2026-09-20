@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS books (
     pdf_pages INTEGER,
     group_chat_id INTEGER,
     topic_pigiri_id INTEGER,
+    members_message_id INTEGER,
     status TEXT DEFAULT 'draft'
         CHECK(status IN ('draft', 'active', 'finished')),
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -120,7 +121,7 @@ def init_db():
 def _migrate(conn: sqlite3.Connection):
     """ستون‌های جدید را به دیتابیس‌های قدیمی اضافه می‌کند."""
     columns = {r["name"] for r in conn.execute("PRAGMA table_info(books)").fetchall()}
-    for column in ("book_pages", "pdf_pages"):
+    for column in ("book_pages", "pdf_pages", "members_message_id"):
         if column not in columns:
             conn.execute(f"ALTER TABLE books ADD COLUMN {column} INTEGER")
 
@@ -212,6 +213,15 @@ def set_book_topic(book_id: int, group_chat_id: int, thread_id: Optional[int]):
         conn.execute(
             "UPDATE books SET group_chat_id=?, topic_pigiri_id=? WHERE id=?",
             (group_chat_id, thread_id, book_id),
+        )
+
+
+def set_book_members_message_id(book_id: int, message_id: int):
+    """شناسه پیام لیست اعضا در تاپیک پیگیری را ذخیره می‌کند."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE books SET members_message_id=? WHERE id=?",
+            (message_id, book_id),
         )
 
 

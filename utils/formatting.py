@@ -179,6 +179,25 @@ def format_answers_report(book_title: str, report_data: list) -> str:
     return "\n".join(lines)
 
 
+def format_members_list(book_title: str, members: list) -> str:
+    """
+    پیام لیست اعضای ثبت‌نام‌کرده در یک کتاب.
+    این پیام هر بار که عضو جدیدی اضافه می‌شود به‌روز می‌شود.
+    """
+    lines = [
+        f"👥 اعضای همخوانی «{book_title}»",
+        f"تعداد: {len(members)} نفر",
+        "",
+    ]
+    for i, m in enumerate(members, start=1):
+        name = m["full_name"] or (f"@{m['username']}" if m["username"] else "کاربر")
+        username_part = f" | @{m['username']}" if m["username"] else ""
+        lines.append(f"{i}. {name}{username_part}")
+    if not members:
+        lines.append("(هنوز کسی ثبت‌نام نکرده)")
+    return "\n".join(lines)
+
+
 def format_answer_submitted_notification(
     book_title: str,
     user_full_name: str,

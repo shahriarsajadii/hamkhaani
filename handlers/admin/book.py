@@ -27,7 +27,7 @@ from utils.keyboards import (
     BTN_ACTIVATE_BOOK,
     BTN_DEACTIVATE_BOOK,
 )
-from utils.formatting import format_schedule_announcement, format_book_info
+from utils.formatting import format_schedule_announcement, format_book_info, format_members_list
 from utils.jalali import days_with_human
 from handlers.common import is_admin, TEXT_INPUT, end_and_show_menu, button_filter
 from handlers.states import S
@@ -153,6 +153,20 @@ async def set_topic_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     db.set_book_topic(book_id, msg.chat_id, msg.message_thread_id)
+
+    # ارسال پیام اعضا در تاپیک و ذخیره شناسه آن برای آپدیت‌های آینده
+    try:
+        members = db.get_registered_users(book_id)
+        members_text = format_members_list(book["title"], members)
+        sent = await context.bot.send_message(
+            chat_id=msg.chat_id,
+            message_thread_id=msg.message_thread_id,
+            text=members_text,
+        )
+        db.set_book_members_message_id(book_id, sent.message_id)
+    except Exception:
+        pass
+
     await msg.reply_text(f"✅ تاپیک «پیگیری» برای کتاب «{book['title']}» ثبت شد.")
 
 
