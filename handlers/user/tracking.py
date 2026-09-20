@@ -217,11 +217,15 @@ async def report_choose_day(
 
     jd = parse_jalali(rday["jalali_date"])
 
+    pdf_line = ""
+    if rday["pdf_page_from"] and rday["pdf_page_to"]:
+        pdf_line = f"\n💻 پی‌دی‌اف {rday['pdf_page_from']} تا {rday['pdf_page_to']}"
+
     await query.edit_message_text(
         f"📖 «{book['title']}»\n"
         f"🗓 {format_jalali_human(jd)}\n"
-        f"📚 صفحه {rday['book_page_from']} تا {rday['book_page_to']}\n"
-        f"💻 پی‌دی‌اف {rday['pdf_page_from']} تا {rday['pdf_page_to']}\n\n"
+        f"📚 صفحه {rday['book_page_from']} تا {rday['book_page_to']}"
+        f"{pdf_line}\n\n"
         "این بخش رو خوندی؟",
         reply_markup=_read_confirm_kb(reading_day_id, book_id),
     )

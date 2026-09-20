@@ -5,6 +5,7 @@
 تغییرات:
 - اضافه شدن «غیرفعال‌سازی کتاب» (active -> draft)
 - دکمه‌های برگشت در مراحل چندگانه
+- پی‌دی‌اف اختیاری: اگه کتاب پی‌دی‌اف نداشت، - فرستاده می‌شه
 """
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -94,16 +95,23 @@ async def new_book_pages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("باید یه عدد مثبت بفرستی، مثلا: 320")
         return S.BOOK_PAGES
-    await update.message.reply_text("تعداد کل صفحات فایل پی‌دی‌اف رو بفرست (مثال: 180):")
+    await update.message.reply_text(
+        "تعداد کل صفحات فایل پی‌دی‌اف رو بفرست (مثال: 180).\n"
+        "اگه کتاب پی‌دی‌اف نداره، - بفرست:"
+    )
     return S.BOOK_PDF_PAGES
 
 
 async def new_book_pdf_pages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        pdf_pages = _parse_pages(update.message.text)
-    except ValueError:
-        await update.message.reply_text("باید یه عدد مثبت بفرستی، مثلا: 180")
-        return S.BOOK_PDF_PAGES
+    raw = update.message.text.strip()
+    if raw == "-":
+        pdf_pages = None
+    else:
+        try:
+            pdf_pages = _parse_pages(raw)
+        except ValueError:
+            await update.message.reply_text("باید یه عدد مثبت بفرستی یا - برای بدون پی‌دی‌اف:")
+            return S.BOOK_PDF_PAGES
 
     title = context.user_data.pop("new_book_title")
     author = context.user_data.pop("new_book_author")
@@ -112,9 +120,10 @@ async def new_book_pdf_pages(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     book_id = db.create_book(title, author, desc, book_pages, pdf_pages)
 
+    pdf_info = f" | 💻 صفحات پی‌دی‌اف: {pdf_pages}" if pdf_pages else ""
     await update.message.reply_text(
         f"✅ کتاب «{title}» با شناسه #{book_id} ساخته شد.\n"
-        f"📄 صفحات کتاب: {book_pages} | 💻 صفحات پی‌دی‌اف: {pdf_pages}\n\n"
+        f"📄 صفحات کتاب: {book_pages}{pdf_info}\n\n"
         "حالا برای اتصال تاپیک «پیگیری» این کتاب:\n"
         "۱) وارد گروه شو و برو توی تاپیک «پیگیری».\n"
         f"۲) همونجا این دستور رو بفرست:\n<code>/settopic {book_id}</code>\n\n"
@@ -203,8 +212,11 @@ async def edit_book_choose_field(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     field = query.data.split(":")[1]
     context.user_data["edit_field"] = field
+    hint = ""
+    if field == "pdf_pages":
+        hint = "\n(برای حذف پی‌دی‌اف، - بفرست)"
     await query.edit_message_text(
-        f"مقدار جدید برای «{FIELD_LABELS[field]}» رو بفرست:\n\n"
+        f"مقدار جدید برای «{FIELD_LABELS[field]}» رو بفرست:{hint}\n\n"
         "(برای انصراف /cancel بزن)"
     )
     return S.EDIT_VALUE
@@ -217,7 +229,11 @@ async def edit_book_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await end_and_show_menu(update, context, "مشکلی پیش اومد، دوباره از منو شروع کن.")
 
     text = update.message.text.strip()
-    if field in NUMERIC_FIELDS:
+
+    if field == "pdf_pages" and text == "-":
+        # حذف پی‌دی‌اف از کتاب
+        value = None
+    elif field in NUMERIC_FIELDS:
         try:
             value = _parse_pages(text)
         except ValueError:

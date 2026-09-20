@@ -39,11 +39,16 @@ async def send_daily_reminders(context: ContextTypes.DEFAULT_TYPE):
                 jd = parse_jalali(rday["jalali_date"])
                 human_date = format_jalali_human(jd)
 
+                # خط پی‌دی‌اف فقط اگه وجود داشت
+                pdf_line = ""
+                if rday["pdf_page_from"] and rday["pdf_page_to"]:
+                    pdf_line = f"\n💻 پی‌دی‌اف {rday['pdf_page_from']} تا {rday['pdf_page_to']}"
+
                 text = (
                     f"📖 «{book['title']}»\n"
                     f"🗓 امروز: {human_date}\n"
-                    f"📚 صفحه {rday['book_page_from']} تا {rday['book_page_to']}\n"
-                    f"💻 پی‌دی‌اف {rday['pdf_page_from']} تا {rday['pdf_page_to']}\n\n"
+                    f"📚 صفحه {rday['book_page_from']} تا {rday['book_page_to']}"
+                    f"{pdf_line}\n\n"
                     "بخش امروز رو خوندی؟"
                 )
 
@@ -88,7 +93,8 @@ def _format_evening_schedule(book, days: list) -> str:
             date_line += " ✅"
         lines.append(date_line)
         lines.append(f"📚 کتاب: صفحه {d['book_page_from']} تا {d['book_page_to']}")
-        lines.append(f"💻 پی دی اف : {d['pdf_page_from']} تا {d['pdf_page_to']}")
+        if d.get("pdf_page_from") and d.get("pdf_page_to"):
+            lines.append(f"💻 پی دی اف : {d['pdf_page_from']} تا {d['pdf_page_to']}")
         lines.append("")
     return "\n".join(lines).strip()
 

@@ -12,7 +12,8 @@ def format_schedule_days(days: List[dict]) -> str:
     for d in days:
         lines.append(f"🗓 {d['jalali_date_human']}")
         lines.append(f"📚 کتاب: صفحه {d['book_page_from']} تا {d['book_page_to']}")
-        lines.append(f"💻 پی دی اف : {d['pdf_page_from']} تا {d['pdf_page_to']}")
+        if d.get("pdf_page_from") and d.get("pdf_page_to"):
+            lines.append(f"💻 پی دی اف : {d['pdf_page_from']} تا {d['pdf_page_to']}")
         lines.append("")
     return "\n".join(lines).strip()
 
@@ -32,7 +33,8 @@ def format_nightly_schedule(book: sqlite3.Row, days: List[dict]) -> str:
             date_line += " ✅"
         lines.append(date_line)
         lines.append(f"📚 کتاب: صفحه {d['book_page_from']} تا {d['book_page_to']}")
-        lines.append(f"💻 پی دی اف : {d['pdf_page_from']} تا {d['pdf_page_to']}")
+        if d.get("pdf_page_from") and d.get("pdf_page_to"):
+            lines.append(f"💻 پی دی اف : {d['pdf_page_from']} تا {d['pdf_page_to']}")
         lines.append("")
     return "\n".join(lines).strip()
 

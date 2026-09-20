@@ -5,8 +5,9 @@
 ادمین کتاب را انتخاب می‌کند و اگر برنامه‌ای داشته باشد، همان اول کامل نمایش داده می‌شود.
 بعد می‌تواند:
   - «✏️ ویرایش برنامه»: تاریخ شروع و تعداد صفحه در روز را بدهد و برنامه بر اساس
-    تعداد کل صفحات کتاب خودکار ساخته شود (صفحات پی‌دی‌اف به تناسب محاسبه می‌شوند).
+    تعداد کل صفحات کتاب خودکار ساخته شود (اگر pdf_pages ثبت شده باشد، به تناسب محاسبه می‌شود).
   - «✍️ ورود دستی روزها»: روزها را یکی‌یکی دستی وارد کند.
+    اگر کتاب پی‌دی‌اف ندارد، مرحله پی‌دی‌اف پرسیده نمی‌شود.
 """
 import re
 
@@ -141,7 +142,7 @@ async def schedule_ask_pages_per_day(update: Update, context: ContextTypes.DEFAU
             parse_jalali(context.user_data["sched_start_date"]),
             pages_per_day,
             book["book_pages"],
-            book["pdf_pages"],
+            book["pdf_pages"],  # None اگه پی‌دی‌اف نداره
         )
     except ValueError as e:
         await update.message.reply_text(str(e))
@@ -194,8 +195,15 @@ async def schedule_manual_book_pages(update: Update, context: ContextTypes.DEFAU
         return S.SCHED_MANUAL_BOOK_PAGES
     context.user_data["sched_book_from"] = f
     context.user_data["sched_book_to"] = t
-    await update.message.reply_text("بازه صفحات پی‌دی‌اف رو بفرست (مثال: 3 تا 15):")
-    return S.SCHED_MANUAL_PDF_PAGES
+
+    # اگه کتاب pdf_pages داره، مرحله پی‌دی‌اف رو بپرس؛ وگرنه مستقیم ذخیره کن
+    book = db.get_book(context.user_data["sched_book_id"])
+    if book["pdf_pages"]:
+        await update.message.reply_text("بازه صفحات پی‌دی‌اف رو بفرست (مثال: 3 تا 15):")
+        return S.SCHED_MANUAL_PDF_PAGES
+    else:
+        # بدون پی‌دی‌اف — مستقیم ذخیره موقت
+        return await _save_manual_day(update, context, pdf_from=None, pdf_to=None)
 
 
 async def schedule_manual_pdf_pages(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -205,6 +213,12 @@ async def schedule_manual_pdf_pages(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text(str(e))
         return S.SCHED_MANUAL_PDF_PAGES
 
+    return await _save_manual_day(update, context, pdf_from=f, pdf_to=t)
+
+
+async def _save_manual_day(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                            pdf_from, pdf_to):
+    """یک روز دستی رو به لیست موقت اضافه می‌کنه."""
     jalali_date = context.user_data.pop("sched_current_date")
     context.user_data["sched_days"].append(
         {
@@ -212,8 +226,8 @@ async def schedule_manual_pdf_pages(update: Update, context: ContextTypes.DEFAUL
             "gregorian_date": to_gregorian(parse_jalali(jalali_date)).isoformat(),
             "book_page_from": context.user_data.pop("sched_book_from"),
             "book_page_to": context.user_data.pop("sched_book_to"),
-            "pdf_page_from": f,
-            "pdf_page_to": t,
+            "pdf_page_from": pdf_from,
+            "pdf_page_to": pdf_to,
         }
     )
     await update.message.reply_text(

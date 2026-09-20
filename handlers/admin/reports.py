@@ -36,7 +36,9 @@ async def list_books_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return await end_and_show_menu(update, context, "هنوز کتابی ثبت نشده.")
     lines = ["📚 لیست کتاب‌ها:\n"]
     for b in books:
-        pages = f"{b['book_pages'] or '—'} صفحه کتاب / {b['pdf_pages'] or '—'} صفحه پی‌دی‌اف"
+        pages = f"{b['book_pages'] or '—'} صفحه کتاب"
+        if b["pdf_pages"]:
+            pages += f" / {b['pdf_pages']} صفحه پی‌دی‌اف"
         lines.append(
             f"#{b['id']} - {b['title']} ({STATUS_LABELS.get(b['status'], b['status'])})\n   {pages}"
         )
