@@ -58,36 +58,61 @@ async def registration_choose(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"✅ توی کتاب «{book['title']}» ثبت‌نام شدی. موفق باشی 📖"
         )
 
-        # آپدیت پیام لیست اعضا در تاپیک «پیگیری»
+        # ---------------------------------
+        # اعلان اضافه شدن کاربر
+        # ---------------------------------
+        if book.get("group_chat_id"):
+            full_name = tg_user.full_name or "کاربر"
+
+            try:
+                await context.bot.send_message(
+                    chat_id=book["group_chat_id"],
+                    message_thread_id=book.get("topic_pigiri_id"),
+                    text=(
+                        f"🎉 کاربر {full_name} به همخوانی "
+                        f"«{book['title']}» اضافه شد. باریکلا :)"
+                    ),
+                )
+            except Exception as e:
+                logger.warning("خطا در ارسال اعلان ثبت‌نام کاربر: %s", e)
+
+        # ---------------------------------
+        # آپدیت پیام لیست اعضا
+        # ---------------------------------
         book = dict(book)
+
         if book.get("group_chat_id"):
             try:
                 members = db.get_registered_users(book_id)
                 members_text = format_members_list(book["title"], members)
 
                 if book.get("members_message_id"):
-                    # آپدیت پیام موجود
                     await context.bot.edit_message_text(
                         chat_id=book["group_chat_id"],
                         message_id=book["members_message_id"],
                         text=members_text,
                     )
                 else:
-                    # اگه پیام قبلی ثبت نشده، یه پیام جدید بفرست و ذخیره کن
                     sent = await context.bot.send_message(
                         chat_id=book["group_chat_id"],
                         message_thread_id=book.get("topic_pigiri_id"),
                         text=members_text,
                     )
-                    db.set_book_members_message_id(book_id, sent.message_id)
+
+                    db.set_book_members_message_id(
+                        book_id,
+                        sent.message_id
+                    )
+
             except Exception as e:
                 logger.warning("خطا در آپدیت پیام اعضا: %s", e)
+
     else:
         await query.edit_message_text(
             f"قبلاً توی کتاب «{book['title']}» ثبت‌نام کرده بودی."
         )
-    return ConversationHandler.END
 
+    return ConversationHandler.END
 
 async def my_books_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
