@@ -46,18 +46,21 @@ def build_conversation() -> ConversationHandler:
         entry_points.extend(module.ENTRY_POINTS)
         all_states.update(module.STATES)
 
-    # همه CallbackQueryHandler هایی که در هر state وجود دارند را یکجا جمع می‌کنیم
     all_callback_handlers = []
+
+    # همه callback handlerهای stateها
     for handlers_list in all_states.values():
         for h in handlers_list:
             if isinstance(h, CallbackQueryHandler):
                 all_callback_handlers.append(h)
 
-    # یک handler catch-all برای callback های ناشناخته/قدیمی
+    # callback مربوط به دکمه «خوندم»
+    all_callback_handlers.append(tracking.tracking_callback_handler)
+
+    # catch-all باید آخر باشد
     all_callback_handlers.append(
         CallbackQueryHandler(stale_callback_handler)
     )
-
     # هر state را با تمام callback handler های سیستم غنی می‌کنیم
     # (handler های اختصاصی state اول اضافه می‌شوند تا اولویت داشته باشند)
     merged_states: dict = {}
