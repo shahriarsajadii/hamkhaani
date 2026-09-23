@@ -117,8 +117,15 @@ def main():
     # هندلر مرکزی خطا — مهم‌ترین بخش استیبیلیتی
     application.add_error_handler(error_handler)
 
-    # فیلتر پیام‌های گروهی: همه‌چیز رو بلوک کن به‌جز /settopic
-    group_filter = filters.ChatType.GROUPS & ~filters.Regex(r"^/settopic")
+    # هندلر /settopic باید قبل از group_guard ثبت بشه (group=-2 = اولویت بالاتر)
+    application.add_handler(
+        CommandHandler("settopic", set_topic_command),
+        group=-2,
+    )
+
+    # فیلتر پیام‌های گروهی: همه‌چیز رو بلوک کن به‌جز command ها
+    # filters.COMMAND تمام command ها رو exclude می‌کند (از جمله /settopic)
+    group_filter = filters.ChatType.GROUPS & ~filters.COMMAND
     application.add_handler(
         MessageHandler(group_filter, group_guard),
         group=-1,
@@ -136,7 +143,6 @@ def main():
     # دستورات مستقل
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("cancel", cancel))
-    application.add_handler(CommandHandler("settopic", set_topic_command))
 
     # پاسخ «خواندم» از یادآوری روزانه یا دکمه inline
     # این هندلر با group=0 (پیش‌فرض) ثبت می‌شود — بعد از group=-1 چک می‌شود
