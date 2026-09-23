@@ -297,14 +297,29 @@ async def tracking_callback(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    """ثبت گزارش «خواندم» از طریق دکمه inline."""
+    """ثبت گزارش «خواندم» از طریق دکمه inline.
+
+    دو فرمت callback_data پشتیبانی می‌شود:
+      - track:<reading_day_id>           ← از منوی ربات (پیوی)
+      - track:yes:<reading_day_id>       ← از یادآوری روزانه (پیوی یا گروه)
+      - track:no:<reading_day_id>        ← دکمه «نه هنوز» — فقط تأیید می‌گیریم
+    """
 
     query = update.callback_query
     await query.answer()
 
     try:
         parts = query.data.split(":")
-        reading_day_id = int(parts[1])
+        if len(parts) == 3:
+            # فرمت: track:yes:ID یا track:no:ID
+            action = parts[1]
+            reading_day_id = int(parts[2])
+            if action == "no":
+                await query.edit_message_text("باشه! فراموش نکنی بعداً ثبتش کنی 📖")
+                return
+        else:
+            # فرمت: track:ID
+            reading_day_id = int(parts[1])
     except (ValueError, IndexError, AttributeError):
         await query.edit_message_text("داده گزارش نامعتبر است.")
         return
@@ -312,37 +327,45 @@ async def tracking_callback(
     tg_user = update.effective_user
     user_row = db.get_user_by_telegram_id(tg_user.id)
 
+    async def _reply(text: str):
+        """ویرایش پیام اصلی یا ارسال پیام جدید (در گروه‌ها edit ممکن است نشود)."""
+        try:
+            await query.edit_message_text(text)
+        except Exception:
+            try:
+                await query.message.reply_text(text)
+            except Exception:
+                pass
+
     if not user_row:
-        await query.edit_message_text("خطا: کاربر پیدا نشد.")
+        await _reply("خطا: کاربر پیدا نشد.")
         return
 
     rday = db.get_reading_day(reading_day_id)
 
     if not rday:
-        await query.edit_message_text("این روز دیگر وجود ندارد.")
+        await _reply("این روز دیگر وجود ندارد.")
         return
 
     book = db.get_book(rday["book_id"])
 
     if not book:
-        await query.edit_message_text("کتاب پیدا نشد.")
+        await _reply("کتاب پیدا نشد.")
         return
 
     if book["status"] != "active":
-        await query.edit_message_text(
-            "گزارش دادن فقط برای کتاب فعال امکان‌پذیر است."
-        )
+        await _reply("گزارش دادن فقط برای کتاب فعال امکان‌پذیر است.")
         return
 
     if not db.is_user_registered(book["id"], user_row["id"]):
-        await query.edit_message_text("شما در این کتاب ثبت‌نام نکرده‌اید.")
+        await _reply("شما در این کتاب ثبت‌نام نکرده‌اید.")
         return
 
     # بررسی ترتیب روزها از یادآور روزانه
     current_day_index = rday["day_index"]
     if not db.is_previous_day_reported(book["id"], user_row["id"], current_day_index):
         prev_index = current_day_index - 1
-        await query.edit_message_text(
+        await _reply(
             f"⚠️ برای ثبت گزارش روز {current_day_index}، ابتدا باید گزارش روز {prev_index} را ثبت کنی.\n"
             "از ربات (ثبت گزارش مطالعه) اقدام کن."
         )
@@ -352,9 +375,7 @@ async def tracking_callback(
     existing = db.get_progress_for_user(reading_day_id, user_row["id"])
 
     if existing and existing["status"] == "read":
-        await query.edit_message_text(
-            "✅ این روز قبلاً به عنوان «خواندم» ثبت شده و دیگر قابل تغییر نیست."
-        )
+        await _reply("✅ این روز قبلاً به عنوان «خواندم» ثبت شده و دیگر قابل تغییر نیست.")
         return
 
     # ثبت گزارش خواندن
@@ -366,14 +387,12 @@ async def tracking_callback(
     if not created:
         existing = db.get_progress_for_user(reading_day_id, user_row["id"])
         if existing and existing["status"] == "read":
-            await query.edit_message_text(
-                "✅ این روز قبلاً به عنوان «خواندم» ثبت شده و دیگر قابل تغییر نیست."
-            )
+            await _reply("✅ این روز قبلاً به عنوان «خواندم» ثبت شده و دیگر قابل تغییر نیست.")
         else:
-            await query.edit_message_text("⚠️ مشکلی در ثبت گزارش پیش اومد. دوباره امتحان کن.")
+            await _reply("⚠️ مشکلی در ثبت گزارش پیش اومد. دوباره امتحان کن.")
         return
 
-    await query.edit_message_text("✅ گزارش ثبت شد: این بخش رو خوندم 📖")
+    await _reply("✅ گزارش ثبت شد: این بخش رو خوندم 📖")
 
     # اعلام در تاپیک «پیگیری» گروه
     if book["group_chat_id"]:
@@ -417,7 +436,7 @@ async def tracking_callback(
 
 tracking_callback_handler = CallbackQueryHandler(
     tracking_callback,
-    pattern=r"^track:\d+$",
+    pattern=r"^track:(yes:|no:)?\d+$",
 )
 
 

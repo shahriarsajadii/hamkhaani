@@ -43,11 +43,14 @@ async def group_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def group_callback_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    در گروه‌ها هیچ callback query ای نباید پاسخ داده شود.
-    اگر کسی روی inline button در گروه کلیک کند، ربات ساکت می‌ماند.
+    در گروه‌ها فقط callback های مربوط به ثبت گزارش (track:) مجاز هستند.
+    بقیه callback ها نادیده گرفته می‌شوند.
     """
     query = update.callback_query
     if query and update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
+        # دکمه‌های ثبت گزارش مطالعه باید در گروه هم کار کنند
+        if query.data and query.data.startswith("track:"):
+            return  # اجازه بده tracking_callback_handler پردازش کنه
         try:
             await query.answer()
         except Exception:
@@ -120,9 +123,10 @@ def main():
         MessageHandler(group_filter, group_guard),
         group=-1,
     )
-    # بلوک کردن همه‌ی callback query ها در گروه‌ها
+    # بلوک کردن callback query های گروه — به‌جز دکمه‌های track: که باید کار کنند
+    # pattern شامل track: نمی‌شود تا tracking_callback_handler بتواند آنها را بگیرد
     application.add_handler(
-        CallbackQueryHandler(group_callback_guard, pattern=".*", block=True),
+        CallbackQueryHandler(group_callback_guard, pattern=r"^(?!track:).*", block=True),
         group=-1,
     )
 
@@ -135,6 +139,9 @@ def main():
     application.add_handler(CommandHandler("settopic", set_topic_command))
 
     # پاسخ «خواندم» از یادآوری روزانه یا دکمه inline
+    # این هندلر با group=0 (پیش‌فرض) ثبت می‌شود — بعد از group=-1 چک می‌شود
+    # اما چون group_callback_guard برای track: زودتر return می‌کند،
+    # tracking_callback_handler در group=0 پردازش را می‌گیرد
     application.add_handler(tracking_callback_handler)
 
     # فال‌بک برای پیام‌های ناشناخته - فقط در پیوی (private)

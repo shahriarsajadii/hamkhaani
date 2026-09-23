@@ -7,6 +7,8 @@
 - دکمه‌های برگشت در مراحل چندگانه
 - پی‌دی‌اف اختیاری: اگه کتاب پی‌دی‌اف نداشت، - فرستاده می‌شه
 """
+import logging
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
@@ -14,6 +16,8 @@ from telegram.ext import (
     MessageHandler,
     CallbackQueryHandler,
 )
+
+logger = logging.getLogger(__name__)
 
 import database as db
 from utils.keyboards import (
@@ -161,22 +165,37 @@ async def set_topic_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("کتابی با این شناسه پیدا نشد.")
         return
 
-    db.set_book_topic(book_id, msg.chat_id, msg.message_thread_id)
+    thread_id = msg.message_thread_id
+    chat_id = msg.chat_id
+
+    logger.info(
+        "settopic: book_id=%s chat_id=%s thread_id=%s",
+        book_id, chat_id, thread_id,
+    )
+
+    # اگه گروه Topics فعال نداشته باشه، message_thread_id مقدار None می‌گیره
+    # در این حالت پیام‌ها به کانال اصلی گروه ارسال می‌شوند (بدون تاپیک)
+    db.set_book_topic(book_id, chat_id, thread_id)
 
     # ارسال پیام اعضا در تاپیک و ذخیره شناسه آن برای آپدیت‌های آینده
     try:
         members = db.get_registered_users(book_id)
         members_text = format_members_list(book["title"], members)
         sent = await context.bot.send_message(
-            chat_id=msg.chat_id,
-            message_thread_id=msg.message_thread_id,
+            chat_id=chat_id,
+            message_thread_id=thread_id,
             text=members_text,
         )
         db.set_book_members_message_id(book_id, sent.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("نتونستم پیام اعضا رو در تاپیک بفرستم: %s", e)
 
-    await msg.reply_text(f"✅ تاپیک «پیگیری» برای کتاب «{book['title']}» ثبت شد.")
+    topic_info = f"(thread_id={thread_id})" if thread_id else "(بدون تاپیک — کانال اصلی گروه)"
+    await msg.reply_text(
+        f"✅ تاپیک «پیگیری» برای کتاب «{book['title']}» ثبت شد. {topic_info}\n\n"
+        "اگه thread_id=None نشون میده یعنی گروه Topics فعال نداره یا "
+        "این دستور رو داخل تاپیک نفرستادی."
+    )
 
 
 # ----------------------------------------------------------- ویرایش کتاب --
