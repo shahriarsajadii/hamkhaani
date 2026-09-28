@@ -1,7 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-تولید متن‌های نهایی برای اعلان برنامه همخوانی، گزارش‌ها و ... .
-"""
+
 import datetime
 from typing import List
 import sqlite3
@@ -20,7 +17,7 @@ def format_schedule_days(days: List[dict]) -> str:
 
 def format_nightly_schedule(book: sqlite3.Row, days: List[dict]) -> str:
     """
-    برنامه‌ی شبانه‌ای که هر شب ساعت ۱۲ در تاپیک پیگیری پست می‌شود.
+    برنامه‌ی شبانه ‌ای که هر شب ساعت ۱۲ در تاپیک پیگیری پست می‌شود.
     روزهای قبل از امروز با ✅ علامت‌گذاری می‌شوند.
     days باید خروجی days_with_human باشند (کلید jalali_date_human و gregorian_date).
     """

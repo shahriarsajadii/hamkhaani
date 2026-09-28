@@ -15,7 +15,7 @@ BTN_DELETE_BOOK = "🗑 حذف کتاب"
 BTN_ACTIVATE_BOOK = "🚀 فعال‌سازی کتاب"
 BTN_DEACTIVATE_BOOK = "⏸ غیرفعال‌سازی کتاب"
 
-BTN_ACTIVE_BOOKS = "📚 کتاب‌های فعال"
+BTN_ACTIVE_BOOKS = "📚 ثبت نام در همخوانی"
 BTN_MY_BOOKS = "📖 کتاب‌های من"
 BTN_TODAY_REPORT = "✅ ثبت گزارش مطالعه"
 BTN_MY_REPORTS = "📊 گزارش‌های من"
