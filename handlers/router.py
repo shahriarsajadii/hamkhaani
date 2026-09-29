@@ -21,10 +21,13 @@ from telegram import Update
 from telegram.ext import CommandHandler, ConversationHandler, CallbackQueryHandler, ContextTypes
 
 from handlers.common import start, cancel
-from handlers.admin import book, schedule, questions, reports
-from handlers.user import registration, tracking, answers, members
+from handlers.admin import book, schedule, questions, reports, poll
+from handlers.user import registration, tracking, answers, members, suggestion
 
-MODULES = (book, schedule, questions, reports, registration, tracking, answers, members)
+MODULES = (
+    book, schedule, questions, reports, poll,
+    registration, tracking, answers, members, suggestion,
+)
 
 
 async def stale_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

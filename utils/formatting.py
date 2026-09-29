@@ -221,6 +221,61 @@ def format_answer_submitted_notification(
     )
 
 
+def _poll_user_identifier(row: sqlite3.Row) -> str:
+    if row["username"]:
+        return f"@{row['username']}"
+    return f"ID:{row['telegram_id']}"
+
+
+def format_poll_group_message(suggestions: List[sqlite3.Row], closed: bool = False) -> str:
+    """
+    پیام «زنده»ی نظرسنجی که در گروه «تحلیل کتاب» پست می‌شود و با هر پیشنهاد
+    جدید (ویرایش پیام قبلی) به‌روزرسانی می‌شود:
+
+    نظرسنجی این ماه
+    1 : shahriar | @eeraad
+    سایه‌ی باد - کارلوس لوئیث ثافون
+    2 : ...
+    """
+    lines = ["نظرسنجی این ماه"]
+
+    if not suggestions:
+        lines.append("")
+        lines.append("هنوز پیشنهادی ثبت نشده.")
+    else:
+        for i, s in enumerate(suggestions, start=1):
+            name = s["full_name"] or "کاربر"
+            identifier = _poll_user_identifier(s)
+            lines.append(f"{i} : {name} | {identifier}")
+            author_part = f" - {s['author']}" if s["author"] else ""
+            lines.append(f"{s['book_title']}{author_part}")
+
+    if closed:
+        lines.append("")
+        lines.append("🔒 نظرسنجی بسته شد.")
+
+    return "\n".join(lines)
+
+
+def format_poll_admin_list(poll: sqlite3.Row, suggestions: List[sqlite3.Row]) -> str:
+    """لیست پیشنهادهای یک نظرسنجی برای نمایش در پنل ادمین (همراه وضعیت)."""
+    status_label = "🟢 باز" if poll["status"] == "open" else "🔴 بسته"
+    lines = [
+        f"🗳 نظرسنجی #{poll['id']} ({status_label})",
+        f"تعداد پیشنهادها: {len(suggestions)}",
+        "",
+    ]
+    if not suggestions:
+        lines.append("(هنوز پیشنهادی ثبت نشده)")
+    else:
+        for i, s in enumerate(suggestions, start=1):
+            name = s["full_name"] or "کاربر"
+            identifier = _poll_user_identifier(s)
+            author_part = f" - {s['author']}" if s["author"] else ""
+            lines.append(f"{i}. {name} ({identifier}): «{s['book_title']}»{author_part}")
+    return "\n".join(lines)
+
+
 def format_question_report(question_text: str, answers: List[sqlite3.Row]) -> str:
     lines = [f"❓ {question_text}", ""]
     for i, a in enumerate(answers, start=1):

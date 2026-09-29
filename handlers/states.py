@@ -70,3 +70,11 @@ class S(IntEnum):
 
     # گزارش جواب افراد (ادمین)
     ANSWERS_REPORT_CHOOSE_BOOK = auto()
+
+    # نظرسنجی انتخاب کتاب (ادمین)
+    POLL_MENU = auto()
+    POLL_CLOSE_CONFIRM = auto()
+
+    # پیشنهاد کتاب برای نظرسنجی (کاربر)
+    SUGGEST_TITLE = auto()
+    SUGGEST_AUTHOR = auto()

@@ -97,6 +97,35 @@ CREATE TABLE IF NOT EXISTS answer_submissions (
     FOREIGN KEY(book_id) REFERENCES books(id),
     FOREIGN KEY(user_id) REFERENCES users(id)
 );
+
+-- تنظیمات عمومی ربات (کلید/مقدار)، مثلا chat_id گروه «تحلیل کتاب»
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+
+-- نظرسنجی‌های انتخاب کتاب ماهانه (در گروه «تحلیل کتاب»)
+CREATE TABLE IF NOT EXISTS book_polls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    status TEXT DEFAULT 'open'
+        CHECK(status IN ('open', 'closed')),
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    closed_at TEXT,
+    announcement_message_id INTEGER
+);
+
+-- پیشنهاد کتاب هر کاربر برای یک نظرسنجی (هر کاربر فقط یک پیشنهاد در هر نظرسنجی)
+CREATE TABLE IF NOT EXISTS book_suggestions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    poll_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    book_title TEXT NOT NULL,
+    author TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(poll_id, user_id),
+    FOREIGN KEY(poll_id) REFERENCES book_polls(id),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+);
 """
 
 
@@ -124,6 +153,13 @@ def _migrate(conn: sqlite3.Connection):
     for column in ("book_pages", "pdf_pages", "members_message_id"):
         if column not in columns:
             conn.execute(f"ALTER TABLE books ADD COLUMN {column} INTEGER")
+
+    # ستون پیام زنده‌ی نظرسنجی (برای دیتابیس‌هایی که این جدول را قبل از این تغییر ساخته‌اند)
+    poll_columns = {
+        r["name"] for r in conn.execute("PRAGMA table_info(book_polls)").fetchall()
+    }
+    if poll_columns and "announcement_message_id" not in poll_columns:
+        conn.execute("ALTER TABLE book_polls ADD COLUMN announcement_message_id INTEGER")
 
 
 # ---------------------------------------------------------------- users ----
@@ -786,3 +822,117 @@ def is_previous_day_reported(book_id: int, user_id: int, day_index: int) -> bool
         if row is None:
             return False
         return row["status"] == "read"
+
+
+# ---------------------------------------------------------------- settings -
+
+def set_setting(key: str, value: str):
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO settings (key, value) VALUES (?,?)
+               ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+            (key, value),
+        )
+
+
+def get_setting(key: str) -> Optional[str]:
+    with get_conn() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return row["value"] if row else None
+
+
+# --------------------------------------------------- نظرسنجی انتخاب کتاب ----
+
+def create_book_poll() -> int:
+    """یک نظرسنجی جدید با وضعیت 'open' می‌سازد."""
+    with get_conn() as conn:
+        cur = conn.execute("INSERT INTO book_polls (status) VALUES ('open')")
+        return cur.lastrowid
+
+
+def get_poll(poll_id: int) -> Optional[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM book_polls WHERE id=?", (poll_id,)
+        ).fetchone()
+
+
+def get_open_poll() -> Optional[sqlite3.Row]:
+    """آخرین نظرسنجی‌ای که هنوز باز است را برمی‌گرداند (باید حداکثر یکی باشد)."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM book_polls WHERE status='open' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+
+def get_latest_poll() -> Optional[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM book_polls ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+
+def close_book_poll(poll_id: int):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE book_polls SET status='closed', closed_at=CURRENT_TIMESTAMP WHERE id=?",
+            (poll_id,),
+        )
+
+
+def set_poll_announcement_message_id(poll_id: int, message_id: int):
+    """شناسه پیام زنده‌ی نظرسنجی در گروه «تحلیل کتاب» را ذخیره می‌کند تا بعداً ویرایش شود."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE book_polls SET announcement_message_id=? WHERE id=?",
+            (message_id, poll_id),
+        )
+
+
+def add_book_suggestion(poll_id: int, user_id: int, book_title: str, author: str) -> bool:
+    """
+    پیشنهاد کتاب کاربر را برای یک نظرسنجی ثبت یا به‌روزرسانی می‌کند
+    (هر کاربر فقط یک پیشنهاد فعال در هر نظرسنجی دارد).
+    اگر پیشنهاد تازه بود True و اگر جایگزین پیشنهاد قبلی شد False برمی‌گرداند.
+    """
+    book_title = (book_title or "").strip()
+    if not book_title:
+        raise ValueError("نام کتاب نمی‌تواند خالی باشد.")
+    author = (author or "").strip()
+
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT 1 FROM book_suggestions WHERE poll_id=? AND user_id=?",
+            (poll_id, user_id),
+        ).fetchone()
+        conn.execute(
+            """INSERT INTO book_suggestions (poll_id, user_id, book_title, author)
+               VALUES (?,?,?,?)
+               ON CONFLICT(poll_id, user_id)
+               DO UPDATE SET book_title=excluded.book_title,
+                             author=excluded.author,
+                             created_at=CURRENT_TIMESTAMP""",
+            (poll_id, user_id, book_title, author),
+        )
+        return existing is None
+
+
+def get_user_suggestion(poll_id: int, user_id: int) -> Optional[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM book_suggestions WHERE poll_id=? AND user_id=?",
+            (poll_id, user_id),
+        ).fetchone()
+
+
+def get_poll_suggestions(poll_id: int) -> List[sqlite3.Row]:
+    """همه پیشنهادهای یک نظرسنجی، به ترتیب زمان ثبت، به همراه اطلاعات کاربر."""
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT s.*, u.full_name, u.username, u.telegram_id
+               FROM book_suggestions s
+               JOIN users u ON u.id = s.user_id
+               WHERE s.poll_id=?
+               ORDER BY s.created_at""",
+            (poll_id,),
+        ).fetchall()

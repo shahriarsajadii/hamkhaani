@@ -1,3 +1,3 @@
 # -*- coding: utf-8 -*-
-from . import registration, tracking, answers , members
-__all__ = ["registration", "tracking", "answers", "members"]
+from . import registration, tracking, answers, members, suggestion
+__all__ = ["registration", "tracking", "answers", "members", "suggestion"]

@@ -14,6 +14,7 @@ BTN_EDIT_BOOK = "✏️ ویرایش کتاب"
 BTN_DELETE_BOOK = "🗑 حذف کتاب"
 BTN_ACTIVATE_BOOK = "🚀 فعال‌سازی کتاب"
 BTN_DEACTIVATE_BOOK = "⏸ غیرفعال‌سازی کتاب"
+BTN_BOOK_POLL = "🗳 نظرسنجی انتخاب کتاب"
 
 BTN_ACTIVE_BOOKS = "📚 ثبت نام در همخوانی"
 BTN_MY_BOOKS = "📖 کتاب‌های من"
@@ -21,6 +22,7 @@ BTN_TODAY_REPORT = "✅ ثبت گزارش مطالعه"
 BTN_MY_REPORTS = "📊 گزارش‌های من"
 BTN_ANSWER_QUESTIONS = "📝 پاسخ به سوالات"
 BTN_MEMBERS_LIST = "👥 لیست اعضا"
+BTN_SUGGEST_BOOK = "📚 پیشنهاد کتاب"
 
 ADMIN_BUTTONS = [
     BTN_NEW_BOOK,
@@ -35,6 +37,7 @@ ADMIN_BUTTONS = [
     BTN_ACTIVATE_BOOK,
     BTN_DEACTIVATE_BOOK,
     BTN_MEMBERS_LIST,
+    BTN_BOOK_POLL,
 ]
 
 USER_BUTTONS = [
@@ -44,6 +47,7 @@ USER_BUTTONS = [
     BTN_MY_REPORTS,
     BTN_ANSWER_QUESTIONS,
     BTN_MEMBERS_LIST,
+    BTN_SUGGEST_BOOK,
 ]
 
 ALL_MENU_BUTTONS = ADMIN_BUTTONS + USER_BUTTONS
@@ -56,6 +60,7 @@ ADMIN_MENU = ReplyKeyboardMarkup(
         [BTN_LIST_BOOKS, BTN_EDIT_BOOK],
         [BTN_DELETE_BOOK, BTN_ACTIVATE_BOOK],
         [BTN_DEACTIVATE_BOOK, BTN_MEMBERS_LIST],
+        [BTN_BOOK_POLL],
     ],
     resize_keyboard=True,
 )
@@ -65,6 +70,7 @@ USER_MENU = ReplyKeyboardMarkup(
         [BTN_ACTIVE_BOOKS, BTN_MY_BOOKS],
         [BTN_TODAY_REPORT, BTN_MY_REPORTS],
         [BTN_ANSWER_QUESTIONS, BTN_MEMBERS_LIST],
+        [BTN_SUGGEST_BOOK],
     ],
     resize_keyboard=True,
 )

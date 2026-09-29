@@ -16,6 +16,7 @@ import database as db
 from config import BOT_TOKEN, BOT_NAME, BOT_DESCRIPTION, BOT_SHORT_DESCRIPTION
 from handlers.common import start, cancel, unknown_message
 from handlers.admin.book import set_topic_command
+from handlers.admin.settings import set_analysis_group_command
 from handlers.router import build_conversation
 from handlers.user.tracking import tracking_callback_handler
 from scheduler import setup_jobs
@@ -120,6 +121,13 @@ def main():
     # هندلر /settopic باید قبل از group_guard ثبت بشه (group=-2 = اولویت بالاتر)
     application.add_handler(
         CommandHandler("settopic", set_topic_command),
+        group=-2,
+    )
+
+    # هندلر /setanalysisgroup هم باید قبل از group_guard ثبت بشه
+    # (برای ثبت گروه «تحلیل کتاب» که تاپیک ندارد)
+    application.add_handler(
+        CommandHandler("setanalysisgroup", set_analysis_group_command),
         group=-2,
     )
 
